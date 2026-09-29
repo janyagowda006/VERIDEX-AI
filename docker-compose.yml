@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: veridex_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: veridex
+      POSTGRES_PASSWORD: veridex_pass
+      POSTGRES_DB: veridex_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:

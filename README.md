@@ -44,25 +44,59 @@ Human Approve / Reject
 
 ---
 
-## 🚀 Current Project Status: Phase 1 — Project Foundation
+## 🚀 Current Project Status: Phase 2 — Business Data Foundation
 
 > [!NOTE]
-> **Phase 1 Status**: Foundation Scaffolded & Verified. Business intelligence logic, AI agent loops, LLM integrations, and dashboard UIs are **planned for later phases** and intentionally omitted from Phase 1.
+> **Phase 2 Status**: Business Data Layer Implemented & Verified. Synthetic data generated reproducibly, schema defined in SQLAlchemy, CSV validation pipeline established, and core business metrics deterministically tested. AI agents, Text-to-SQL, anomaly detection, and UI dashboards are **planned for later phases**.
 
 | Component | Status | Description |
 | :--- | :--- | :--- |
-| **Backend API** | ✅ Implemented | FastAPI application entrypoint with `GET /health` endpoint |
-| **Backend Tests** | ✅ Implemented | Pytest suite for API health verification |
+| **Backend API** | ✅ Implemented | FastAPI entrypoint with `GET /health` and `GET /db-status` endpoints |
+| **Relational Data Schema** | ✅ Implemented | SQLAlchemy 2.0 models for `customers`, `products`, `orders`, `order_items` |
+| **Synthetic Dataset** | ✅ Implemented | Reproducible generator (`seed=42`) producing CSVs in `data/` |
+| **Ingestion & Validation** | ✅ Implemented | 12-rule CSV data validator and database loader (`scripts/load_data.py`) |
+| **Business Metrics** | ✅ Implemented | Deterministic metric functions (Gross/Net Revenue, AOV, Rates) |
+| **Backend Tests** | ✅ Implemented | Pytest suite covering health, CSV validation, DB ORM, and metrics |
 | **Frontend UI** | ✅ Implemented | Vite + React + JS minimal foundation page |
 | **Database** | ⚙️ Configured | PostgreSQL 16 `docker-compose.yml` service |
-| **AI / Agent Loop** | ⏳ Planned | Scheduled for Phase 2 / Phase 3 |
-| **Robustness Engine** | ⏳ Planned | Scheduled for Phase 3 |
+| **AI / Agent Loop** | ⏳ Planned | Scheduled for Phase 3 / Phase 4 |
+| **Robustness Engine** | ⏳ Planned | Scheduled for Phase 4 |
+
+---
+
+## 📊 Relational Business Data Model
+
+The project uses a normalized 4-table schema (Single Source of Truth):
+
+```text
+customers (customer_id [PK], customer_name, region, customer_segment, signup_date, acquisition_channel)
+    │
+    └──< orders (order_id [PK], customer_id [FK], order_date, sales_channel, order_status, discount)
+            │
+            └──< order_items (order_item_id [PK], order_id [FK], product_id [FK], quantity, unit_price)
+                    │
+products <──────────┘ (product_id [PK], product_name, category, unit_price, cost_per_unit)
+```
+
+> [!IMPORTANT]
+> **Single Source of Truth Rule**: `region` is stored **only** in the `customers` table. Order regions are derived via relationship (`orders.customer_id -> customers.customer_id -> customers.region`).
+
+---
+
+## 📐 Deterministic Business Metric Definitions
+
+1. **Gross Revenue**: $\sum (\text{quantity} \times \text{unit\_price})$ for `Completed` orders.
+2. **Net Revenue**: $\sum (\text{quantity} \times \text{unit\_price} \times (1 - \text{discount}))$ for `Completed` orders.
+3. **Order Count**: Total count of orders with `order_status = 'Completed'`.
+4. **Average Order Value (AOV)**: $\frac{\text{Net Revenue}}{\text{Completed Order Count}}$.
+5. **Cancellation Rate**: $\frac{\text{Cancelled Order Count}}{\text{Total Order Count}}$.
+6. **Return Rate**: $\frac{\text{Returned Order Count}}{\text{Total Order Count}}$.
 
 ---
 
 ## 🛠️ Technology Stack
 
-- **Backend**: Python 3.14+, FastAPI, Uvicorn, Pydantic, Pytest
+- **Backend**: Python 3.14+, FastAPI, Uvicorn, Pydantic, SQLAlchemy 2.0, Psycopg2, Pandas, Pytest
 - **Frontend**: React 19, Vite, JavaScript, CSS3
 - **Database**: PostgreSQL 16 (via Docker)
 - **Tooling**: Git, Docker Compose
@@ -77,21 +111,35 @@ VERIDEX-AI/
 │   ├── app/
 │   │   ├── api/
 │   │   │   ├── __init__.py
-│   │   │   └── routes.py         # API routes (GET /health)
+│   │   │   └── routes.py         # API routes (GET /health, GET /db-status)
 │   │   ├── core/
-│   │   │   ├── __init__.py
-│   │   │   └── config.py         # Pydantic environment configuration
-│   │   ├── models/               # Architectural boundary for future DB models
+│   │   │   ├── db.py             # SQLAlchemy engine & session management
+│   │   │   ├── config.py         # Pydantic environment configuration
+│   │   │   └── __init__.py
+│   │   ├── models/
+│   │   │   ├── business_data.py  # Customer, Product, Order, OrderItem models
+│   │   │   └── __init__.py
 │   │   ├── schemas/              # Architectural boundary for Pydantic schemas
-│   │   ├── services/             # Architectural boundary for business services
+│   │   ├── services/
+│   │   │   ├── data_ingestion.py # CSV validation (12 rules) & loader
+│   │   │   ├── metrics.py        # Deterministic business metric formulas
+│   │   │   └── __init__.py
 │   │   ├── tools/                # Architectural boundary for typed agent tools
-│   │   ├── __init__.py
 │   │   └── main.py               # FastAPI application entrypoint
+│   ├── scripts/
+│   │   ├── generate_data.py      # Reproducible synthetic data generator (seed=42)
+│   │   └── load_data.py          # Database initialization & loader script
 │   ├── tests/
-│   │   ├── __init__.py
-│   │   └── test_health.py        # Pytest health check tests
+│   │   ├── test_health.py        # Health API test
+│   │   ├── test_data_validation.py # Data generator reproducibility & validator tests
+│   │   └── test_db.py            # Database schema, ingestion, & metrics tests
 │   ├── .env.example              # Environment variables template
-│   └── requirements.txt          # Lean Phase 1 Python dependencies
+│   └── requirements.txt          # Python dependencies
+├── data/
+│   ├── customers.csv             # 150 synthetic customers
+│   ├── products.csv              # 20 synthetic products
+│   ├── orders.csv                # 1,500 synthetic orders
+│   └── order_items.csv           # 3,750 synthetic order line items
 ├── frontend/
 │   ├── src/
 │   │   ├── App.jsx               # Foundation React component
@@ -111,39 +159,41 @@ VERIDEX-AI/
 ### Prerequisites
 - Python 3.10+
 - Node.js 18+ & npm
-- Docker & Docker Compose (optional for database)
+- Docker & Docker Compose (optional for PostgreSQL container)
 
 ---
 
-### 1. PostgreSQL Setup (Docker)
-Start the local PostgreSQL container:
+### 1. PostgreSQL Database Setup
+Start the local PostgreSQL Docker container:
 ```bash
 docker-compose up -d
 ```
-*PostgreSQL will be exposed at `localhost:5432` (User: `veridex`, DB: `veridex_db`).*
+*PostgreSQL will run at `localhost:5432` (User: `veridex`, Password: `veridex_pass`, DB: `veridex_db`).*
 
 ---
 
-### 2. Backend Setup & Startup
+### 2. Synthetic Data Generation & Database Loading
 Navigate to the `backend/` directory:
 ```bash
 cd backend
 ```
 
-Create and activate a Python virtual environment:
+Create and activate virtual environment:
 ```bash
-# Windows (PowerShell / Command Prompt)
 python -m venv .venv
-.\.venv\Scripts\activate
-
-# macOS / Linux
-python3 -m venv .venv
-source .venv/bin/activate
+# Windows: .\.venv\Scripts\activate
+# macOS/Linux: source .venv/bin/activate
+pip install -r requirements.txt
 ```
 
-Install backend dependencies:
+Generate synthetic CSV dataset:
 ```bash
-pip install -r requirements.txt
+python scripts/generate_data.py
+```
+
+Load dataset into PostgreSQL:
+```bash
+python scripts/load_data.py
 ```
 
 Run automated backend tests:
@@ -151,52 +201,29 @@ Run automated backend tests:
 pytest
 ```
 
-Start the FastAPI backend server:
+---
+
+### 3. Start Backend API Server
 ```bash
 uvicorn app.main:app --reload --port 8000
 ```
-Open [http://localhost:8000/health](http://localhost:8000/health) in your browser to verify `{"status": "ok"}`.
+- Health Check: [http://localhost:8000/health](http://localhost:8000/health)
+- DB Status Debug: [http://localhost:8000/db-status](http://localhost:8000/db-status)
 
 ---
 
-### 3. Frontend Setup & Startup
-Navigate to the `frontend/` directory:
+### 4. Start Frontend
+Navigate to `frontend/`:
 ```bash
 cd frontend
-```
-
-Install frontend dependencies:
-```bash
 npm install
-```
-
-Start the Vite development server:
-```bash
 npm run dev
-```
-Open [http://localhost:5173](http://localhost:5173) in your browser.
-
-Build the frontend for production:
-```bash
-npm run build
 ```
 
 ---
 
 ## 👥 Git Workflow for Collaborators
 
-1. **Pull latest changes before starting work**:
-   ```bash
-   git checkout main
-   git pull origin main
-   ```
-2. **Make clean, modular changes**: Keep pull requests focused on specific phases/tasks.
-3. **Verify locally before committing**: Always run `pytest` and `npm run build`.
-4. **Never commit secrets**: Keep `.env` out of version control (`.env.example` provides templates).
-
----
-
-## 🏆 Hackathon Context
-
-- **Event**: Build Fast with AI — AI Build Challenge 2026
-- **Problem Statement**: Problem Statement 4 — AI Decision Engine for Business Data
+1. **Pull latest changes**: `git checkout main && git pull origin main`
+2. **Run tests before committing**: `pytest` and `npm run build`
+3. **Never commit secrets**: Keep `.env` out of version control.

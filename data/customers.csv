@@ -1,0 +1,151 @@
+customer_id,customer_name,region,customer_segment,signup_date,acquisition_channel
+CUST-0001,Quantum Technologies 1,East,Mid-Market,2024-03-12,Direct
+CUST-0002,Summit Solutions 2,West,Enterprise,2024-02-17,Inbound Web
+CUST-0003,Vanguard Data 3,North,SMB,2024-11-28,Outbound Sales
+CUST-0004,Vanguard Digital 4,East,SMB,2024-01-04,Inbound Web
+CUST-0005,Solaris Industries 5,East,Enterprise,2024-06-21,Direct
+CUST-0006,Vertex Logistics 6,North,Mid-Market,2024-06-25,Partner Referral
+CUST-0007,Nexus Digital 7,North,SMB,2024-07-12,Direct
+CUST-0008,Summit Corp 8,East,SMB,2024-12-26,Direct
+CUST-0009,Nexus Systems 9,East,SMB,2024-04-29,Direct
+CUST-0010,Zenith Corp 10,West,SMB,2024-07-05,Inbound Web
+CUST-0011,Alpha Industries 11,South,SMB,2024-12-25,Direct
+CUST-0012,Echo Global 12,South,Enterprise,2024-07-13,Partner Referral
+CUST-0013,Summit Systems 13,East,SMB,2024-01-29,Inbound Web
+CUST-0014,Nexus Industries 14,West,Mid-Market,2024-04-18,Partner Referral
+CUST-0015,Pinnacle Digital 15,West,SMB,2024-11-25,Outbound Sales
+CUST-0016,Starlight Corp 16,South,Mid-Market,2024-10-14,Partner Referral
+CUST-0017,Matrix Logistics 17,West,Mid-Market,2024-03-11,Outbound Sales
+CUST-0018,Vertex Technologies 18,North,Enterprise,2024-03-22,Outbound Sales
+CUST-0019,Echo Solutions 19,West,Mid-Market,2024-08-27,Partner Referral
+CUST-0020,Summit Technologies 20,North,SMB,2024-10-01,Partner Referral
+CUST-0021,Omega Solutions 21,East,Mid-Market,2024-08-20,Direct
+CUST-0022,Synergy Data 22,South,Mid-Market,2024-02-24,Partner Referral
+CUST-0023,Crestview Labs 23,South,Enterprise,2024-03-23,Direct
+CUST-0024,Echo Industries 24,West,Enterprise,2024-07-04,Partner Referral
+CUST-0025,Vanguard Technologies 25,South,SMB,2024-02-10,Direct
+CUST-0026,Velocity Solutions 26,South,Enterprise,2024-08-31,Inbound Web
+CUST-0027,Synergy Data 27,West,SMB,2024-10-03,Inbound Web
+CUST-0028,Beacon Logistics 28,East,Mid-Market,2024-09-21,Outbound Sales
+CUST-0029,Quantum Systems 29,South,Enterprise,2024-01-11,Inbound Web
+CUST-0030,Matrix Systems 30,North,Enterprise,2024-11-19,Direct
+CUST-0031,Vanguard Solutions 31,North,SMB,2024-02-06,Inbound Web
+CUST-0032,Synergy Digital 32,South,Mid-Market,2024-10-19,Outbound Sales
+CUST-0033,Vanguard Digital 33,West,Enterprise,2024-02-19,Outbound Sales
+CUST-0034,Alpha Logistics 34,West,Mid-Market,2024-01-28,Direct
+CUST-0035,Nexus Logistics 35,East,SMB,2024-02-25,Inbound Web
+CUST-0036,Pinnacle Systems 36,West,Enterprise,2024-04-03,Partner Referral
+CUST-0037,Titan Systems 37,North,Mid-Market,2024-10-08,Direct
+CUST-0038,Nexus Data 38,North,SMB,2024-05-01,Inbound Web
+CUST-0039,Solaris Digital 39,West,Mid-Market,2024-07-24,Direct
+CUST-0040,Horizon Logistics 40,North,SMB,2024-05-15,Outbound Sales
+CUST-0041,Beacon Logistics 41,West,Enterprise,2024-05-31,Inbound Web
+CUST-0042,Nexus Labs 42,North,SMB,2024-01-30,Direct
+CUST-0043,Matrix Digital 43,South,Enterprise,2024-09-17,Direct
+CUST-0044,Horizon Solutions 44,North,SMB,2024-04-30,Outbound Sales
+CUST-0045,Quantum Labs 45,South,SMB,2024-01-21,Direct
+CUST-0046,Solaris Labs 46,East,SMB,2024-04-14,Partner Referral
+CUST-0047,Vanguard Corp 47,West,Enterprise,2024-11-26,Partner Referral
+CUST-0048,Titan Industries 48,North,Enterprise,2024-11-14,Direct
+CUST-0049,Vertex Data 49,South,Mid-Market,2024-03-08,Partner Referral
+CUST-0050,Vertex Systems 50,East,Mid-Market,2024-08-12,Partner Referral
+CUST-0051,Echo Data 51,North,SMB,2024-10-10,Partner Referral
+CUST-0052,Quantum Global 52,East,Enterprise,2024-02-24,Inbound Web
+CUST-0053,Synergy Corp 53,South,SMB,2024-04-14,Partner Referral
+CUST-0054,Crestview Digital 54,East,SMB,2024-01-27,Direct
+CUST-0055,Solaris Corp 55,North,Enterprise,2024-03-07,Partner Referral
+CUST-0056,Horizon Digital 56,West,SMB,2024-02-27,Direct
+CUST-0057,Starlight Data 57,North,SMB,2024-10-25,Inbound Web
+CUST-0058,Solaris Global 58,North,Mid-Market,2024-01-21,Partner Referral
+CUST-0059,Pinnacle Systems 59,North,Mid-Market,2024-10-13,Outbound Sales
+CUST-0060,Echo Global 60,South,SMB,2024-03-31,Outbound Sales
+CUST-0061,Apex Global 61,East,SMB,2024-07-29,Inbound Web
+CUST-0062,Synergy Global 62,North,Mid-Market,2024-01-20,Outbound Sales
+CUST-0063,Vanguard Systems 63,West,Mid-Market,2024-04-26,Inbound Web
+CUST-0064,Apex Systems 64,West,Mid-Market,2024-02-05,Partner Referral
+CUST-0065,Alpha Data 65,West,SMB,2024-10-01,Partner Referral
+CUST-0066,Apex Solutions 66,East,Enterprise,2024-05-15,Direct
+CUST-0067,Quantum Labs 67,West,Mid-Market,2024-06-09,Outbound Sales
+CUST-0068,Echo Data 68,North,Mid-Market,2024-10-22,Inbound Web
+CUST-0069,Synergy Technologies 69,West,Enterprise,2024-10-02,Inbound Web
+CUST-0070,Alpha Logistics 70,North,SMB,2024-06-18,Partner Referral
+CUST-0071,Quantum Corp 71,East,SMB,2024-06-16,Outbound Sales
+CUST-0072,Beacon Data 72,South,Enterprise,2024-12-06,Outbound Sales
+CUST-0073,Horizon Labs 73,East,Mid-Market,2024-01-01,Partner Referral
+CUST-0074,Beacon Systems 74,West,SMB,2024-11-06,Partner Referral
+CUST-0075,Titan Digital 75,West,SMB,2024-09-18,Outbound Sales
+CUST-0076,Horizon Solutions 76,East,Mid-Market,2024-11-20,Partner Referral
+CUST-0077,Vertex Systems 77,East,Mid-Market,2024-04-11,Inbound Web
+CUST-0078,Apex Technologies 78,South,SMB,2024-11-08,Direct
+CUST-0079,Titan Logistics 79,South,SMB,2024-07-15,Outbound Sales
+CUST-0080,Zenith Systems 80,South,SMB,2024-01-03,Direct
+CUST-0081,Solaris Systems 81,South,SMB,2024-12-22,Outbound Sales
+CUST-0082,Nexus Data 82,South,SMB,2024-03-03,Outbound Sales
+CUST-0083,Starlight Digital 83,East,SMB,2024-08-14,Outbound Sales
+CUST-0084,Summit Digital 84,South,SMB,2024-08-31,Outbound Sales
+CUST-0085,Synergy Systems 85,East,SMB,2024-09-23,Outbound Sales
+CUST-0086,Vanguard Corp 86,West,Enterprise,2024-05-26,Inbound Web
+CUST-0087,Synergy Industries 87,East,SMB,2024-02-11,Inbound Web
+CUST-0088,Starlight Systems 88,West,SMB,2024-12-27,Inbound Web
+CUST-0089,Vertex Logistics 89,West,Mid-Market,2024-08-26,Outbound Sales
+CUST-0090,Nexus Systems 90,West,Mid-Market,2024-10-26,Direct
+CUST-0091,Matrix Logistics 91,West,Enterprise,2024-06-29,Partner Referral
+CUST-0092,Zenith Logistics 92,South,Mid-Market,2024-05-19,Outbound Sales
+CUST-0093,Velocity Technologies 93,West,Mid-Market,2024-12-13,Outbound Sales
+CUST-0094,Horizon Digital 94,South,SMB,2024-09-30,Direct
+CUST-0095,Zenith Labs 95,North,Enterprise,2024-08-07,Inbound Web
+CUST-0096,Titan Global 96,North,Mid-Market,2024-06-16,Inbound Web
+CUST-0097,Titan Industries 97,East,SMB,2024-07-13,Partner Referral
+CUST-0098,Solaris Corp 98,North,Mid-Market,2024-10-03,Direct
+CUST-0099,Alpha Systems 99,North,SMB,2024-11-29,Direct
+CUST-0100,Apex Systems 100,South,SMB,2024-11-14,Inbound Web
+CUST-0101,Vanguard Global 101,West,SMB,2024-10-15,Inbound Web
+CUST-0102,Titan Corp 102,East,Enterprise,2024-11-06,Direct
+CUST-0103,Horizon Corp 103,North,SMB,2024-06-08,Outbound Sales
+CUST-0104,Zenith Systems 104,North,SMB,2024-11-17,Inbound Web
+CUST-0105,Quantum Corp 105,North,SMB,2024-10-16,Direct
+CUST-0106,Alpha Data 106,West,SMB,2024-02-05,Partner Referral
+CUST-0107,Apex Logistics 107,West,Enterprise,2024-07-04,Outbound Sales
+CUST-0108,Starlight Logistics 108,South,SMB,2024-11-29,Partner Referral
+CUST-0109,Echo Data 109,West,Mid-Market,2024-10-30,Partner Referral
+CUST-0110,Omega Systems 110,North,Mid-Market,2024-08-18,Inbound Web
+CUST-0111,Titan Labs 111,West,Mid-Market,2024-09-10,Partner Referral
+CUST-0112,Horizon Digital 112,South,Mid-Market,2024-05-12,Partner Referral
+CUST-0113,Synergy Labs 113,East,SMB,2024-09-21,Inbound Web
+CUST-0114,Vertex Systems 114,West,Mid-Market,2024-05-03,Outbound Sales
+CUST-0115,Velocity Digital 115,North,Enterprise,2024-04-23,Outbound Sales
+CUST-0116,Vanguard Corp 116,East,Mid-Market,2024-09-28,Partner Referral
+CUST-0117,Solaris Data 117,East,Mid-Market,2024-08-20,Partner Referral
+CUST-0118,Beacon Corp 118,South,Enterprise,2024-04-08,Partner Referral
+CUST-0119,Quantum Data 119,South,Enterprise,2024-09-04,Partner Referral
+CUST-0120,Matrix Data 120,East,SMB,2024-04-09,Partner Referral
+CUST-0121,Vanguard Industries 121,South,Mid-Market,2024-12-28,Inbound Web
+CUST-0122,Synergy Technologies 122,North,SMB,2024-12-23,Inbound Web
+CUST-0123,Velocity Solutions 123,North,SMB,2024-08-28,Outbound Sales
+CUST-0124,Titan Industries 124,South,SMB,2024-05-09,Outbound Sales
+CUST-0125,Quantum Solutions 125,West,Mid-Market,2024-10-22,Direct
+CUST-0126,Starlight Global 126,East,Enterprise,2024-05-07,Direct
+CUST-0127,Summit Logistics 127,South,SMB,2024-07-13,Outbound Sales
+CUST-0128,Titan Corp 128,West,Mid-Market,2024-11-13,Direct
+CUST-0129,Echo Solutions 129,South,SMB,2024-05-15,Direct
+CUST-0130,Horizon Systems 130,South,SMB,2024-03-21,Direct
+CUST-0131,Solaris Digital 131,West,Mid-Market,2024-04-28,Partner Referral
+CUST-0132,Beacon Digital 132,North,SMB,2024-05-15,Inbound Web
+CUST-0133,Solaris Solutions 133,South,SMB,2024-05-16,Inbound Web
+CUST-0134,Vertex Technologies 134,South,SMB,2024-10-31,Partner Referral
+CUST-0135,Titan Solutions 135,West,SMB,2024-12-24,Outbound Sales
+CUST-0136,Synergy Data 136,West,Mid-Market,2024-11-02,Direct
+CUST-0137,Solaris Industries 137,East,Enterprise,2024-04-27,Direct
+CUST-0138,Synergy Labs 138,North,SMB,2024-03-30,Outbound Sales
+CUST-0139,Crestview Digital 139,East,Enterprise,2024-10-26,Outbound Sales
+CUST-0140,Velocity Solutions 140,West,Mid-Market,2024-06-19,Partner Referral
+CUST-0141,Quantum Global 141,East,Mid-Market,2024-09-10,Partner Referral
+CUST-0142,Zenith Data 142,North,Mid-Market,2024-06-10,Partner Referral
+CUST-0143,Omega Solutions 143,West,SMB,2024-01-01,Outbound Sales
+CUST-0144,Solaris Technologies 144,South,Mid-Market,2024-11-14,Outbound Sales
+CUST-0145,Titan Technologies 145,South,Mid-Market,2024-03-08,Partner Referral
+CUST-0146,Titan Digital 146,North,Enterprise,2024-11-18,Inbound Web
+CUST-0147,Horizon Corp 147,North,SMB,2024-02-17,Inbound Web
+CUST-0148,Quantum Digital 148,North,SMB,2024-03-19,Outbound Sales
+CUST-0149,Beacon Data 149,East,Mid-Market,2024-09-04,Outbound Sales
+CUST-0150,Vanguard Digital 150,South,Mid-Market,2024-11-02,Inbound Web

@@ -8,6 +8,8 @@ __pycache__/
 .pytest_cache/
 .coverage
 htmlcov/
+*.db
+*.sqlite
 
 # Node / Frontend
 frontend/node_modules/

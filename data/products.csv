@@ -1,0 +1,21 @@
+product_id,product_name,category,unit_price,cost_per_unit
+PRD-101,Enterprise Server X1,Hardware,2500.00,1500.00
+PRD-102,Workstation Pro 15,Hardware,1200.00,750.00
+PRD-103,Cloud Router 5G,Hardware,450.00,250.00
+PRD-104,Backup Unit 4TB,Hardware,300.00,160.00
+PRD-105,Edge Gateway,Hardware,650.00,380.00
+PRD-106,Analytics Suite License,Software,800.00,100.00
+PRD-107,Security Shield Pro,Software,400.00,50.00
+PRD-108,Database Manager,Software,1500.00,200.00
+PRD-109,DevOps Toolchain,Software,600.00,80.00
+PRD-110,AI Inference Engine,Software,2000.00,300.00
+PRD-111,Cloud Compute Instance / hr,Cloud Services,150.00,60.00
+PRD-112,Cloud Storage Tier 1,Cloud Services,80.00,25.00
+PRD-113,Managed Kubernetes Pool,Cloud Services,500.00,200.00
+PRD-114,Serverless Gateway,Cloud Services,120.00,40.00
+PRD-115,CDN Traffic Bandwidth,Cloud Services,220.00,90.00
+PRD-116,24/7 Enterprise Support,Support,1000.00,400.00
+PRD-117,Standard SLA Support,Support,350.00,120.00
+PRD-118,Onboarding Package,Support,1200.00,500.00
+PRD-119,Architecture Audit,Support,2500.00,1000.00
+PRD-120,Custom Integration Consulting,Support,3000.00,1200.00

@@ -4,6 +4,9 @@ from sqlalchemy import func
 from app.core.db import get_db
 from app.models.business_data import Customer, Product, Order, OrderItem
 from app.services.metrics import calculate_net_revenue
+from app.services.schema_introspection import get_database_schema
+from app.tools.sql_tool import execute_read_only_sql
+from app.schemas.sql_tool import SQLQueryRequest, SQLQueryResult, SchemaContext
 
 router = APIRouter()
 
@@ -46,3 +49,19 @@ def db_status_check(db: Session = Depends(get_db)):
             "database_connected": False,
             "error": str(e)
         }
+
+
+@router.post("/api/tools/sql-query", response_model=SQLQueryResult)
+def run_sql_query_tool(request: SQLQueryRequest, db: Session = Depends(get_db)):
+    """
+    Debug endpoint to execute a safe read-only SQL query via the SQL tool.
+    """
+    return execute_read_only_sql(db, request)
+
+
+@router.get("/api/tools/sql-schema", response_model=SchemaContext)
+def get_sql_schema_tool(db: Session = Depends(get_db)):
+    """
+    Debug endpoint to inspect the database schema context for future AI agent context.
+    """
+    return get_database_schema(db)

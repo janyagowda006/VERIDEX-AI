@@ -44,23 +44,45 @@ Human Approve / Reject
 
 ---
 
-## 🚀 Current Project Status: Phase 2 — Business Data Foundation
+## 🚀 Current Project Status: Phase 3 — Safe Read-Only SQL Investigation Tool
 
 > [!NOTE]
-> **Phase 2 Status**: Business Data Layer Implemented & Verified. Synthetic data generated reproducibly, schema defined in SQLAlchemy, CSV validation pipeline established, and core business metrics deterministically tested. AI agents, Text-to-SQL, anomaly detection, and UI dashboards are **planned for later phases**.
+> **Phase 3 Status**: SQL Investigation Tool Implemented & Verified. Safe read-only execution engine, SQLGlot AST validation, multi-statement guard, result-limit enforcement (max 100 rows), 3-second statement timeout, schema introspection, and 16 passing backend unit tests are fully operational. AI agent loops and UI dashboards are **planned for later phases**.
 
 | Component | Status | Description |
 | :--- | :--- | :--- |
-| **Backend API** | ✅ Implemented | FastAPI entrypoint with `GET /health` and `GET /db-status` endpoints |
+| **Backend API** | ✅ Implemented | FastAPI entrypoint with health, db-status, SQL query, and schema endpoints |
+| **SQL Investigation Tool** | ✅ Implemented | Read-only SQL validator & executor (`backend/app/tools/sql_tool.py`) |
+| **SQL AST Validation** | ✅ Implemented | SQLGlot parser enforcing SELECT-only queries & rejecting prohibited DDL/DML |
+| **Execution Safety** | ✅ Implemented | Multi-statement rejection, 100-row limit injection, 3.0s statement timeout |
+| **Schema Introspection** | ✅ Implemented | Deterministic DB schema inspector (`get_database_schema`) |
 | **Relational Data Schema** | ✅ Implemented | SQLAlchemy 2.0 models for `customers`, `products`, `orders`, `order_items` |
 | **Synthetic Dataset** | ✅ Implemented | Reproducible generator (`seed=42`) producing CSVs in `data/` |
-| **Ingestion & Validation** | ✅ Implemented | 12-rule CSV data validator and database loader (`scripts/load_data.py`) |
-| **Business Metrics** | ✅ Implemented | Deterministic metric functions (Gross/Net Revenue, AOV, Rates) |
-| **Backend Tests** | ✅ Implemented | Pytest suite covering health, CSV validation, DB ORM, and metrics |
+| **Backend Tests** | ✅ Implemented | 16 Pytest tests covering safety, syntax, JOINs, limits, timeouts, and health |
 | **Frontend UI** | ✅ Implemented | Vite + React + JS minimal foundation page |
 | **Database** | ⚙️ Configured | PostgreSQL 16 `docker-compose.yml` service |
-| **AI / Agent Loop** | ⏳ Planned | Scheduled for Phase 3 / Phase 4 |
-| **Robustness Engine** | ⏳ Planned | Scheduled for Phase 4 |
+| **AI / Agent Loop** | ⏳ Planned | Scheduled for Phase 4 / Phase 5 |
+| **Robustness Engine** | ⏳ Planned | Scheduled for Phase 5 |
+
+---
+
+## 🛡️ SQL Safety & Defense-in-Depth Architecture
+
+```text
+Incoming SQL Query String
+        ↓
+1. Multi-Statement Check (Rejects semicolon chaining)
+        ↓
+2. SQLGlot AST Parsing & Syntax Verification
+        ↓
+3. AST Node Inspection (Enforces SELECT root; rejects INSERT, UPDATE, DELETE, DROP, ALTER, CREATE, TRUNCATE)
+        ↓
+4. Result Limit Injection (max_rows = 100, hard cap 1000)
+        ↓
+5. PostgreSQL Transaction Isolation (SET LOCAL TRANSACTION READ ONLY & 3.0s Timeout)
+        ↓
+Structured SQLQueryResult (Data rows, Columns, Execution timing, SHA-256 Query Hash, Error Payload)
+```
 
 ---
 
@@ -83,20 +105,9 @@ products <──────────┘ (product_id [PK], product_name, cate
 
 ---
 
-## 📐 Deterministic Business Metric Definitions
-
-1. **Gross Revenue**: $\sum (\text{quantity} \times \text{unit\_price})$ for `Completed` orders.
-2. **Net Revenue**: $\sum (\text{quantity} \times \text{unit\_price} \times (1 - \text{discount}))$ for `Completed` orders.
-3. **Order Count**: Total count of orders with `order_status = 'Completed'`.
-4. **Average Order Value (AOV)**: $\frac{\text{Net Revenue}}{\text{Completed Order Count}}$.
-5. **Cancellation Rate**: $\frac{\text{Cancelled Order Count}}{\text{Total Order Count}}$.
-6. **Return Rate**: $\frac{\text{Returned Order Count}}{\text{Total Order Count}}$.
-
----
-
 ## 🛠️ Technology Stack
 
-- **Backend**: Python 3.14+, FastAPI, Uvicorn, Pydantic, SQLAlchemy 2.0, Psycopg2, Pandas, Pytest
+- **Backend**: Python 3.14+, FastAPI, Uvicorn, Pydantic, SQLAlchemy 2.0, SQLGlot, Psycopg2, Pandas, Pytest
 - **Frontend**: React 19, Vite, JavaScript, CSS3
 - **Database**: PostgreSQL 16 (via Docker)
 - **Tooling**: Git, Docker Compose
@@ -111,7 +122,7 @@ VERIDEX-AI/
 │   ├── app/
 │   │   ├── api/
 │   │   │   ├── __init__.py
-│   │   │   └── routes.py         # API routes (GET /health, GET /db-status)
+│   │   │   └── routes.py         # API routes (/health, /db-status, /api/tools/sql-query, /api/tools/sql-schema)
 │   │   ├── core/
 │   │   │   ├── db.py             # SQLAlchemy engine & session management
 │   │   │   ├── config.py         # Pydantic environment configuration
@@ -119,20 +130,27 @@ VERIDEX-AI/
 │   │   ├── models/
 │   │   │   ├── business_data.py  # Customer, Product, Order, OrderItem models
 │   │   │   └── __init__.py
-│   │   ├── schemas/              # Architectural boundary for Pydantic schemas
-│   │   ├── services/
-│   │   │   ├── data_ingestion.py # CSV validation (12 rules) & loader
-│   │   │   ├── metrics.py        # Deterministic business metric formulas
+│   │   ├── schemas/
+│   │   │   ├── sql_tool.py       # Pydantic models for SQL tool & schema context
 │   │   │   └── __init__.py
-│   │   ├── tools/                # Architectural boundary for typed agent tools
+│   │   ├── services/
+│   │   │   ├── data_ingestion.py # CSV validation & DB loader
+│   │   │   ├── metrics.py        # Deterministic business metric formulas
+│   │   │   ├── schema_introspection.py # Database schema context introspector
+│   │   │   └── __init__.py
+│   │   ├── tools/
+│   │   │   ├── sql_tool.py       # Read-only SQL validator & executor
+│   │   │   └── __init__.py
 │   │   └── main.py               # FastAPI application entrypoint
 │   ├── scripts/
 │   │   ├── generate_data.py      # Reproducible synthetic data generator (seed=42)
 │   │   └── load_data.py          # Database initialization & loader script
 │   ├── tests/
+│   │   ├── conftest.py           # Shared test database fixture
 │   │   ├── test_health.py        # Health API test
 │   │   ├── test_data_validation.py # Data generator reproducibility & validator tests
-│   │   └── test_db.py            # Database schema, ingestion, & metrics tests
+│   │   ├── test_db.py            # Database schema, ingestion, & metrics tests
+│   │   └── test_sql_tool.py      # SQL tool validation, AST safety, limits, & schema tests
 │   ├── .env.example              # Environment variables template
 │   └── requirements.txt          # Python dependencies
 ├── data/
@@ -156,69 +174,31 @@ VERIDEX-AI/
 
 ## 💻 Local Setup & Development Instructions
 
-### Prerequisites
-- Python 3.10+
-- Node.js 18+ & npm
-- Docker & Docker Compose (optional for PostgreSQL container)
-
----
-
-### 1. PostgreSQL Database Setup
-Start the local PostgreSQL Docker container:
+### 1. PostgreSQL Setup (Docker)
 ```bash
 docker-compose up -d
 ```
-*PostgreSQL will run at `localhost:5432` (User: `veridex`, Password: `veridex_pass`, DB: `veridex_db`).*
 
----
-
-### 2. Synthetic Data Generation & Database Loading
-Navigate to the `backend/` directory:
+### 2. Backend Setup & Test Suite
 ```bash
 cd backend
-```
-
-Create and activate virtual environment:
-```bash
 python -m venv .venv
 # Windows: .\.venv\Scripts\activate
 # macOS/Linux: source .venv/bin/activate
+
 pip install -r requirements.txt
-```
-
-Generate synthetic CSV dataset:
-```bash
-python scripts/generate_data.py
-```
-
-Load dataset into PostgreSQL:
-```bash
 python scripts/load_data.py
-```
-
-Run automated backend tests:
-```bash
 pytest
 ```
-
----
 
 ### 3. Start Backend API Server
 ```bash
 uvicorn app.main:app --reload --port 8000
 ```
 - Health Check: [http://localhost:8000/health](http://localhost:8000/health)
-- DB Status Debug: [http://localhost:8000/db-status](http://localhost:8000/db-status)
-
----
-
-### 4. Start Frontend
-Navigate to `frontend/`:
-```bash
-cd frontend
-npm install
-npm run dev
-```
+- DB Status: [http://localhost:8000/db-status](http://localhost:8000/db-status)
+- Schema Introspection API: [http://localhost:8000/api/tools/sql-schema](http://localhost:8000/api/tools/sql-schema)
+- Safe SQL Query API: `POST http://localhost:8000/api/tools/sql-query`
 
 ---
 

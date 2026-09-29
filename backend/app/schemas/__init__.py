@@ -7,6 +7,11 @@ from app.schemas.sql_tool import (
     ColumnSchema,
     ForeignKeySchema
 )
+from app.schemas.ai import (
+    AskRequest,
+    AskResponse,
+    ToolCallRecord
+)
 
 __all__ = [
     "SQLQueryRequest",
@@ -15,5 +20,8 @@ __all__ = [
     "SchemaContext",
     "TableSchema",
     "ColumnSchema",
-    "ForeignKeySchema"
+    "ForeignKeySchema",
+    "AskRequest",
+    "AskResponse",
+    "ToolCallRecord"
 ]

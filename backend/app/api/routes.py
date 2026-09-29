@@ -7,6 +7,9 @@ from app.services.metrics import calculate_net_revenue
 from app.services.schema_introspection import get_database_schema
 from app.tools.sql_tool import execute_read_only_sql
 from app.schemas.sql_tool import SQLQueryRequest, SQLQueryResult, SchemaContext
+from app.schemas.ai import AskRequest, AskResponse
+from app.ai.provider import BaseLLMProvider, get_llm_provider
+from app.ai.orchestrator import run_investigation_loop
 
 router = APIRouter()
 
@@ -65,3 +68,21 @@ def get_sql_schema_tool(db: Session = Depends(get_db)):
     Debug endpoint to inspect the database schema context for future AI agent context.
     """
     return get_database_schema(db)
+
+
+@router.post("/api/ask", response_model=AskResponse)
+def ask_business_question(
+    request: AskRequest,
+    db: Session = Depends(get_db),
+    provider: BaseLLMProvider = Depends(get_llm_provider)
+):
+    """
+    Natural language decision intelligence endpoint.
+    Orchestrates AI reasoning with safe tool calling against the database.
+    """
+    return run_investigation_loop(
+        question=request.question,
+        db=db,
+        provider=provider,
+        max_turns=request.max_turns or 3
+    )

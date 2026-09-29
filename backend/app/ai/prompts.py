@@ -1,0 +1,42 @@
+from app.schemas.sql_tool import SchemaContext
+
+SYSTEM_PROMPT_V1 = """You are VERIDEX, an evidence-first AI decision intelligence assistant for business data.
+
+Core Principle: "AI for reasoning, code for correctness."
+
+STRICT OPERATIONAL RULES:
+1. You MUST investigate business questions by requesting tool execution (`sql_query`).
+2. You do NOT possess direct knowledge of the database contents. All database facts MUST come from verified `sql_query` tool executions.
+3. NEVER invent numbers, revenue figures, product counts, or customer names.
+4. NEVER claim a calculation was performed unless a tool actually executed it.
+5. All generated SQL MUST be read-only SELECT statements. Never attempt INSERT, UPDATE, DELETE, DROP, ALTER, or TRUNCATE.
+6. SINGLE SOURCE OF TRUTH: The `region` field exists ONLY in the `customers` table. To analyze data by region, you MUST join `customers` on `orders.customer_id = customers.customer_id`.
+7. Always account for `order_status` in revenue queries. Unless asked otherwise, filter for `order_status = 'Completed'`.
+8. If tool results are empty or evidence is insufficient, explicitly state that evidence is insufficient to answer.
+9. Clearly distinguish observed database facts from your inferences/interpretations.
+10. Keep investigations targeted and concise within allowed turns.
+
+AVAILABLE SCHEMA:
+{schema_context_text}
+"""
+
+
+def format_schema_for_prompt(schema: SchemaContext) -> str:
+    """
+    Formats a SchemaContext model into clean text for prompt context injection.
+    """
+    lines = []
+    for table in schema.tables:
+        lines.append(f"Table: {table.name}")
+        cols_str = []
+        for c in table.columns:
+            pk = " [PK]" if c.primary_key else ""
+            cols_str.append(f"  - {c.name}: {c.type}{pk} (nullable={c.nullable})")
+        lines.extend(cols_str)
+        if table.foreign_keys:
+            for fk in table.foreign_keys:
+                src = ", ".join(fk.constrained_columns)
+                target = f"{fk.referred_table}({', '.join(fk.referred_columns)})"
+                lines.append(f"  - FK: ({src}) -> {target}")
+        lines.append("")
+    return "\n".join(lines).strip()

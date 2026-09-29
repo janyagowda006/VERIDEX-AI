@@ -63,7 +63,7 @@ def validate_sql_safety(raw_sql: str) -> Tuple[bool, Optional[str], Optional[str
 
 def execute_read_only_sql(db: Session, request: SQLQueryRequest) -> SQLQueryResult:
     """
-    Executes a read-only SQL query safely against PostgreSQL with statement timeout and result limits.
+    Executes a read-only SQL query safely against PostgreSQL (or SQLite dev/test) with statement timeout and result limits.
     """
     raw_sql = request.sql.strip()
     user_limit = request.max_rows or 100
@@ -79,12 +79,16 @@ def execute_read_only_sql(db: Session, request: SQLQueryRequest) -> SQLQueryResu
             error_message=error_msg
         )
 
-    # Step 2: Apply LIMIT injection safely via SQLGlot or string wrapper
+    # Step 2: Determine SQLGlot target dialect from DB bind
+    dialect_name = db.bind.dialect.name if hasattr(db, "bind") and db.bind else "postgres"
+    sqlglot_dialect = "sqlite" if dialect_name == "sqlite" else "postgres"
+
+    # Apply LIMIT injection safely via SQLGlot
     try:
         parsed = sqlglot.parse_one(re.sub(r";\s*$", "", raw_sql), read="postgres")
         if not parsed.args.get("limit"):
             parsed = parsed.limit(effective_limit + 1)
-        sql_to_execute = parsed.sql(dialect="postgres")
+        sql_to_execute = parsed.sql(dialect=sqlglot_dialect)
     except Exception:
         sql_no_semi = re.sub(r";\s*$", "", raw_sql)
         sql_to_execute = f"SELECT * FROM ({sql_no_semi}) AS __wrap_query LIMIT {effective_limit + 1}"
@@ -94,9 +98,8 @@ def execute_read_only_sql(db: Session, request: SQLQueryRequest) -> SQLQueryResu
     query_hash = hashlib.sha256(raw_sql.encode("utf-8")).hexdigest()
 
     try:
-        # Step 3: Execution under read-only transaction and statement timeout
-        is_postgres = db.bind.dialect.name == "postgresql"
-        if is_postgres:
+        # Step 3: Execution under read-only transaction and statement timeout (if PostgreSQL)
+        if dialect_name in ["postgres", "postgresql"]:
             db.execute(text("SET LOCAL statement_timeout = '3000ms'"))
             db.execute(text("SET TRANSACTION READ ONLY"))
 

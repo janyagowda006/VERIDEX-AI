@@ -2,6 +2,7 @@ import tempfile
 import pytest
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 from app.models.business_data import Base
 from app.services.data_ingestion import ingest_csv_to_db
 from scripts.generate_data import generate_synthetic_data
@@ -11,9 +12,14 @@ from scripts.generate_data import generate_synthetic_data
 def test_db_session():
     """
     Shared pytest fixture creating an in-memory SQLite database populated with synthetic dataset.
-    Used across test_db.py and test_sql_tool.py.
+    Uses StaticPool so in-memory tables persist across threads during FastAPI TestClient tests.
     """
-    engine = create_engine("sqlite:///:memory:", echo=False)
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+        echo=False
+    )
 
     @event.listens_for(engine, "connect")
     def set_sqlite_pragma(dbapi_connection, connection_record):

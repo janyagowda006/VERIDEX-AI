@@ -3,12 +3,15 @@ from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
 from app.schemas.ai import AskResponse, ToolCallRecord
 from app.schemas.evidence import EvidenceItem, ClaimEvidence, EvidenceType
+from app.schemas.decision import DecisionAnalysis
 from app.schemas.sql_tool import SQLQueryRequest
 from app.services.schema_introspection import get_database_schema
 from app.services.evidence_assembler import EvidenceAssembler
 from app.services.evidence_calculations import EvidenceCalculator
+from app.services.decision_engine import DecisionEngine
+from app.services.robustness import RobustnessEngine
 from app.tools.sql_tool import execute_read_only_sql
-from app.ai.prompts import SYSTEM_PROMPT_V2, format_schema_for_prompt
+from app.ai.prompts import SYSTEM_PROMPT_V3, format_schema_for_prompt
 from app.ai.provider import BaseLLMProvider
 
 
@@ -82,9 +85,21 @@ def run_investigation_loop(
     max_turns: int = 3
 ) -> AskResponse:
     """
-    Custom bounded decision intelligence orchestration loop with Evidence Assembly & Provenance Layer.
-    Connects LLM reasoning to the safe read-only SQL tool and constructs deterministic evidence taxonomy.
+    Custom bounded decision intelligence orchestration loop with Evidence Assembly, Decision Engine, and Robustness Testing.
+    Connects LLM reasoning to the safe read-only SQL tool and constructs deterministic decision intelligence payloads.
     """
+    if db is None:
+        return AskResponse(
+            success=False,
+            question=question,
+            answer="",
+            claims=[],
+            evidence=[],
+            analysis=None,
+            tool_calls=[],
+            error="Database session is required."
+        )
+
     bounded_turns = min(max(max_turns, 1), 5)
     schema_context = get_database_schema(db)
     schema_text = format_schema_for_prompt(schema_context)
@@ -105,7 +120,11 @@ def run_investigation_loop(
     tool_call_records: List[ToolCallRecord] = []
     assembler = EvidenceAssembler()
     calculator = EvidenceCalculator()
+    decision_engine = DecisionEngine()
+    robustness_engine = RobustnessEngine()
+
     evidence_items: List[EvidenceItem] = []
+    last_query_data: Optional[List[Dict[str, Any]]] = None
 
     for turn in range(1, bounded_turns + 1):
         response = provider.generate_turn(
@@ -121,6 +140,7 @@ def run_investigation_loop(
                 answer="",
                 claims=[],
                 evidence=evidence_items,
+                analysis=None,
                 tool_calls=tool_call_records,
                 error=response.error
             )
@@ -136,6 +156,7 @@ def run_investigation_loop(
                     answer="",
                     claims=[],
                     evidence=evidence_items,
+                    analysis=None,
                     tool_calls=tool_call_records,
                     error=err_msg
                 )
@@ -156,6 +177,9 @@ def run_investigation_loop(
             )
             tool_call_records.append(record)
 
+            if sql_result.success and sql_result.data:
+                last_query_data = sql_result.data
+
             # Assemble FACT Evidence Item
             fact_item = assembler.extract_fact_evidence(
                 sql_result,
@@ -168,7 +192,6 @@ def run_investigation_loop(
                 if sql_result.data and len(sql_result.data) >= 2:
                     first_row = sql_result.data[0]
                     second_row = sql_result.data[1]
-                    # Find numeric columns
                     num_cols = [col for col, val in first_row.items() if isinstance(val, (int, float))]
                     if num_cols:
                         col_name = num_cols[0]
@@ -203,19 +226,33 @@ def run_investigation_loop(
             # Model synthesized final answer
             claims, final_evidence = _build_claims_and_evidence(response.content, evidence_items)
 
+            # Run deterministic robustness assessment & decision engine
+            robustness_check = robustness_engine.run_robustness_assessment(
+                evidence_items=final_evidence,
+                query_data=last_query_data
+            )
+            decision_analysis = decision_engine.analyze_decision(
+                question=question,
+                evidence_items=final_evidence,
+                query_data=last_query_data,
+                robustness=robustness_check
+            )
+
             return AskResponse(
                 success=True,
                 question=question,
                 answer=response.content,
                 claims=claims,
                 evidence=final_evidence,
+                analysis=decision_analysis,
                 tool_calls=tool_call_records,
                 metadata={
                     "total_turns": turn,
                     "max_turns": bounded_turns,
                     "total_tool_calls": len(tool_call_records),
                     "total_evidence_items": len(final_evidence),
-                    "total_claims": len(claims)
+                    "total_claims": len(claims),
+                    "robustness_status": robustness_check.status
                 }
             )
 
@@ -229,6 +266,16 @@ def run_investigation_loop(
             final_summary += f" Last tool call failed: {last_rec.result.error_message}"
 
     claims, final_evidence = _build_claims_and_evidence(final_summary, evidence_items)
+    robustness_check = robustness_engine.run_robustness_assessment(
+        evidence_items=final_evidence,
+        query_data=last_query_data
+    )
+    decision_analysis = decision_engine.analyze_decision(
+        question=question,
+        evidence_items=final_evidence,
+        query_data=last_query_data,
+        robustness=robustness_check
+    )
 
     return AskResponse(
         success=True,
@@ -236,6 +283,7 @@ def run_investigation_loop(
         answer=final_summary,
         claims=claims,
         evidence=final_evidence,
+        analysis=decision_analysis,
         tool_calls=tool_call_records,
         metadata={
             "total_turns": bounded_turns,
@@ -243,6 +291,7 @@ def run_investigation_loop(
             "total_tool_calls": len(tool_call_records),
             "total_evidence_items": len(final_evidence),
             "total_claims": len(claims),
+            "robustness_status": robustness_check.status,
             "boundary_reached": True
         }
     )

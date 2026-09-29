@@ -78,7 +78,7 @@ def ask_business_question(
 ):
     """
     Natural language decision intelligence endpoint.
-    Orchestrates AI reasoning with safe tool calling against the database.
+    Orchestrates AI reasoning with safe tool calling, evidence assembly, decision intelligence analysis, and robustness testing.
     """
     return run_investigation_loop(
         question=request.question,

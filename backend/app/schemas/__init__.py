@@ -14,6 +14,13 @@ from app.schemas.evidence import (
     EvidenceItem,
     ClaimEvidence
 )
+from app.schemas.decision import (
+    DecisionCriterion,
+    Recommendation,
+    RobustnessScenario,
+    RobustnessCheck,
+    DecisionAnalysis
+)
 from app.schemas.ai import (
     AskRequest,
     AskResponse,
@@ -33,6 +40,11 @@ __all__ = [
     "DerivedFactCalculation",
     "EvidenceItem",
     "ClaimEvidence",
+    "DecisionCriterion",
+    "Recommendation",
+    "RobustnessScenario",
+    "RobustnessCheck",
+    "DecisionAnalysis",
     "AskRequest",
     "AskResponse",
     "ToolCallRecord"

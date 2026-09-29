@@ -44,44 +44,50 @@ Human Approve / Reject
 
 ---
 
-## 🚀 Current Project Status: Phase 3 — Safe Read-Only SQL Investigation Tool
+## 🚀 Current Project Status: Phase 5 — Evidence Assembly & Provenance Layer
 
 > [!NOTE]
-> **Phase 3 Status**: SQL Investigation Tool Implemented & Verified. Safe read-only execution engine, SQLGlot AST validation, multi-statement guard, result-limit enforcement (max 100 rows), 3-second statement timeout, schema introspection, and 16 passing backend unit tests are fully operational. AI agent loops and UI dashboards are **planned for later phases**.
+> **Phase 5 Status**: Evidence Assembly & Provenance Layer Implemented & Verified. Deterministic evidence assembler, arithmetic calculation layer, evidence taxonomy (FACT / DERIVED_FACT / INFERENCE), claim-evidence mapping, and 44 passing backend unit tests are fully operational.
 
 | Component | Status | Description |
 | :--- | :--- | :--- |
-| **Backend API** | ✅ Implemented | FastAPI entrypoint with health, db-status, SQL query, and schema endpoints |
+| **Backend API** | ✅ Implemented | FastAPI entrypoint with health, db-status, SQL tool, schema, and `/api/ask` endpoints |
+| **Evidence Assembler** | ✅ Implemented | Deterministic conversion of `SQLQueryResult` into `FACT` evidence objects |
+| **Evidence Calculator** | ✅ Implemented | Deterministic arithmetic helpers (`percentage_change`, `difference`, `ratio`, `share_of_total`) |
+| **Evidence Taxonomy** | ✅ Implemented | Structured models for `FACT`, `DERIVED_FACT`, and `INFERENCE` classifications |
+| **Claim-Evidence Mapping**| ✅ Implemented | Explicit linking of claims in `AskResponse` to supporting evidence IDs |
 | **SQL Investigation Tool** | ✅ Implemented | Read-only SQL validator & executor (`backend/app/tools/sql_tool.py`) |
 | **SQL AST Validation** | ✅ Implemented | SQLGlot parser enforcing SELECT-only queries & rejecting prohibited DDL/DML |
 | **Execution Safety** | ✅ Implemented | Multi-statement rejection, 100-row limit injection, 3.0s statement timeout |
 | **Schema Introspection** | ✅ Implemented | Deterministic DB schema inspector (`get_database_schema`) |
-| **Relational Data Schema** | ✅ Implemented | SQLAlchemy 2.0 models for `customers`, `products`, `orders`, `order_items` |
-| **Synthetic Dataset** | ✅ Implemented | Reproducible generator (`seed=42`) producing CSVs in `data/` |
-| **Backend Tests** | ✅ Implemented | 16 Pytest tests covering safety, syntax, JOINs, limits, timeouts, and health |
+| **AI Reasoning Loop** | ✅ Implemented | Provider-agnostic bounded loop (Gemini / Mock) executing safe SQL tool |
+| **Backend Tests** | ✅ Implemented | 44 Pytest tests covering AI orchestration, evidence assembly, provenance, & calculations |
 | **Frontend UI** | ✅ Implemented | Vite + React + JS minimal foundation page |
 | **Database** | ⚙️ Configured | PostgreSQL 16 `docker-compose.yml` service |
-| **AI / Agent Loop** | ⏳ Planned | Scheduled for Phase 4 / Phase 5 |
-| **Robustness Engine** | ⏳ Planned | Scheduled for Phase 5 |
+| **Robustness Engine** | ⏳ Planned | Scheduled for Phase 6 |
 
 ---
 
-## 🛡️ SQL Safety & Defense-in-Depth Architecture
+## 🛡️ Evidence & SQL Safety Architecture
 
 ```text
-Incoming SQL Query String
+User Question
         ↓
-1. Multi-Statement Check (Rejects semicolon chaining)
+POST /api/ask
         ↓
-2. SQLGlot AST Parsing & Syntax Verification
+Custom Bounded Orchestrator Loop
         ↓
-3. AST Node Inspection (Enforces SELECT root; rejects INSERT, UPDATE, DELETE, DROP, ALTER, CREATE, TRUNCATE)
+Safe Read-Only SQL Tool (SQLGlot AST Validation & 3.0s Timeout)
         ↓
-4. Result Limit Injection (max_rows = 100, hard cap 1000)
+SQLQueryResult (SQL, SHA-256 Hash, Execution Timestamp, Rows, Columns)
         ↓
-5. PostgreSQL Transaction Isolation (SET LOCAL TRANSACTION READ ONLY & 3.0s Timeout)
+Evidence Assembler (Deterministic Python Service)
+        ├── FACT Evidence (SQL provenance, query hash, timestamp, sample rows)
+        └── Evidence Calculator (DERIVED_FACT: formula, inputs, output)
         ↓
-Structured SQLQueryResult (Data rows, Columns, Execution timing, SHA-256 Query Hash, Error Payload)
+LLM Synthesis & Claim-Evidence Mapping (Categorizes FACT, DERIVED_FACT, INFERENCE)
+        ↓
+AskResponse (Answer, Claims, Evidence, Tool Calls, Metadata)
 ```
 
 ---
@@ -107,7 +113,7 @@ products <──────────┘ (product_id [PK], product_name, cate
 
 ## 🛠️ Technology Stack
 
-- **Backend**: Python 3.14+, FastAPI, Uvicorn, Pydantic, SQLAlchemy 2.0, SQLGlot, Psycopg2, Pandas, Pytest
+- **Backend**: Python 3.14+, FastAPI, Uvicorn, Pydantic, SQLAlchemy 2.0, SQLGlot, Google GenAI SDK, Psycopg2, Pandas, Pytest
 - **Frontend**: React 19, Vite, JavaScript, CSS3
 - **Database**: PostgreSQL 16 (via Docker)
 - **Tooling**: Git, Docker Compose
@@ -120,9 +126,14 @@ products <──────────┘ (product_id [PK], product_name, cate
 VERIDEX-AI/
 ├── backend/
 │   ├── app/
+│   │   ├── ai/
+│   │   │   ├── __init__.py
+│   │   │   ├── orchestrator.py   # Bounded custom tool-calling loop & evidence integration
+│   │   │   ├── prompts.py        # Versioned system prompts (V1 & V2 evidence rules)
+│   │   │   └── provider.py       # BaseLLMProvider, GeminiProvider, MockLLMProvider
 │   │   ├── api/
 │   │   │   ├── __init__.py
-│   │   │   └── routes.py         # API routes (/health, /db-status, /api/tools/sql-query, /api/tools/sql-schema)
+│   │   │   └── routes.py         # API routes (/health, /db-status, /api/tools/*, /api/ask)
 │   │   ├── core/
 │   │   │   ├── db.py             # SQLAlchemy engine & session management
 │   │   │   ├── config.py         # Pydantic environment configuration
@@ -131,10 +142,14 @@ VERIDEX-AI/
 │   │   │   ├── business_data.py  # Customer, Product, Order, OrderItem models
 │   │   │   └── __init__.py
 │   │   ├── schemas/
+│   │   │   ├── ai.py             # AskRequest, AskResponse, ToolCallRecord models
+│   │   │   ├── evidence.py       # EvidenceType, EvidenceSource, EvidenceItem, ClaimEvidence
 │   │   │   ├── sql_tool.py       # Pydantic models for SQL tool & schema context
 │   │   │   └── __init__.py
 │   │   ├── services/
 │   │   │   ├── data_ingestion.py # CSV validation & DB loader
+│   │   │   ├── evidence_assembler.py   # Deterministic FACT evidence assembler
+│   │   │   ├── evidence_calculations.py # Deterministic DERIVED_FACT calculation layer
 │   │   │   ├── metrics.py        # Deterministic business metric formulas
 │   │   │   ├── schema_introspection.py # Database schema context introspector
 │   │   │   └── __init__.py
@@ -147,9 +162,11 @@ VERIDEX-AI/
 │   │   └── load_data.py          # Database initialization & loader script
 │   ├── tests/
 │   │   ├── conftest.py           # Shared test database fixture
-│   │   ├── test_health.py        # Health API test
+│   │   ├── test_ai_orchestrator.py # AI reasoning & tool calling tests
 │   │   ├── test_data_validation.py # Data generator reproducibility & validator tests
 │   │   ├── test_db.py            # Database schema, ingestion, & metrics tests
+│   │   ├── test_evidence.py      # Evidence assembly, provenance, & calculation tests
+│   │   ├── test_health.py        # Health API test
 │   │   └── test_sql_tool.py      # SQL tool validation, AST safety, limits, & schema tests
 │   ├── .env.example              # Environment variables template
 │   └── requirements.txt          # Python dependencies
@@ -199,6 +216,7 @@ uvicorn app.main:app --reload --port 8000
 - DB Status: [http://localhost:8000/db-status](http://localhost:8000/db-status)
 - Schema Introspection API: [http://localhost:8000/api/tools/sql-schema](http://localhost:8000/api/tools/sql-schema)
 - Safe SQL Query API: `POST http://localhost:8000/api/tools/sql-query`
+- Decision Intelligence Query API: `POST http://localhost:8000/api/ask`
 
 ---
 

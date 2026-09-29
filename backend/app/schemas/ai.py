@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional
 from app.schemas.sql_tool import SQLQueryResult
+from app.schemas.evidence import ClaimEvidence, EvidenceItem
 
 
 class AskRequest(BaseModel):
@@ -23,11 +24,13 @@ class ToolCallRecord(BaseModel):
 
 class AskResponse(BaseModel):
     """
-    Structured response returned by the VERIDEX decision engine.
+    Structured response returned by the VERIDEX decision engine, preserving evidence & claims.
     """
     success: bool
     question: str
     answer: str
-    tool_calls: List[ToolCallRecord] = []
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    claims: List[ClaimEvidence] = Field(default_factory=list, description="Claim-to-evidence mappings.")
+    evidence: List[EvidenceItem] = Field(default_factory=list, description="Categorized evidence items (FACT, DERIVED_FACT, INFERENCE).")
+    tool_calls: List[ToolCallRecord] = Field(default_factory=list, description="Tool execution history.")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Execution metadata.")
     error: Optional[str] = None

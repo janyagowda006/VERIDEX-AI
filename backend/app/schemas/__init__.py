@@ -7,6 +7,13 @@ from app.schemas.sql_tool import (
     ColumnSchema,
     ForeignKeySchema
 )
+from app.schemas.evidence import (
+    EvidenceType,
+    EvidenceSource,
+    DerivedFactCalculation,
+    EvidenceItem,
+    ClaimEvidence
+)
 from app.schemas.ai import (
     AskRequest,
     AskResponse,
@@ -21,6 +28,11 @@ __all__ = [
     "TableSchema",
     "ColumnSchema",
     "ForeignKeySchema",
+    "EvidenceType",
+    "EvidenceSource",
+    "DerivedFactCalculation",
+    "EvidenceItem",
+    "ClaimEvidence",
     "AskRequest",
     "AskResponse",
     "ToolCallRecord"

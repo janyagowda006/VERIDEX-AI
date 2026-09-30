@@ -1,6 +1,34 @@
 import React, { useState } from 'react';
 import { ClaimBadge } from './ClaimBadge.jsx';
 
+/**
+ * Formats the calculation output based on the formula type defined in the API contract.
+ * Supported contract formulas from backend/app/services/evidence_calculations.py:
+ * - percentage_change: percentage unit (%)
+ * - share_of_total: percentage unit (%)
+ * - difference: absolute numeric value (no %)
+ * - ratio: numeric ratio (no %)
+ * Unknown types: safe neutral representation (no %)
+ */
+function formatCalculationOutput(calculation) {
+  if (!calculation || calculation.output === null || calculation.output === undefined) {
+    return 'Undefined';
+  }
+
+  const normalized = (calculation.formula_name || '').toLowerCase();
+
+  switch (normalized) {
+    case 'percentage_change':
+    case 'share_of_total':
+      return `${calculation.output}%`;
+    case 'difference':
+    case 'ratio':
+      return `${calculation.output}`;
+    default:
+      return `${calculation.output}`;
+  }
+}
+
 export function EvidencePanel({ evidence = [], toolCalls = [] }) {
   const [expanded, setExpanded] = useState(true);
   const [activeTab, setActiveTab] = useState('evidence');
@@ -85,7 +113,7 @@ export function EvidencePanel({ evidence = [], toolCalls = [] }) {
                   {item.calculation && (
                     <div className="calculation-box">
                       <div><strong>Formula:</strong> <code>{item.calculation.formula}</code></div>
-                      <div><strong>Formula Output:</strong> {item.calculation.output}%</div>
+                      <div><strong>Formula Output:</strong> {formatCalculationOutput(item.calculation)}</div>
                       <div><strong>Inputs:</strong> {JSON.stringify(item.calculation.inputs)}</div>
                       <div><strong>Parent Evidence IDs:</strong> {item.calculation.input_evidence_ids.join(', ')}</div>
                     </div>

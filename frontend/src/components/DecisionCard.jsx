@@ -57,14 +57,31 @@ export function DecisionCard({ analysis }) {
               </tr>
             </thead>
             <tbody>
-              {rankings.map((r) => {
-                const entityKey = Object.keys(r.details || {}).find(k => ['region', 'product_name', 'customer_name', 'category'].includes(k)) || 'Item';
-                const metricKey = Object.keys(r.details || {}).find(k => typeof r.details[k] === 'number') || 'Value';
+              {rankings.map((r, idx) => {
+                const details = r?.details || {};
+                const topKeys = Object.keys(r || {}).filter(k => k !== 'rank' && k !== 'details');
+                const detailKeys = Object.keys(details).filter(k => k !== 'rank');
+
+                // Detect metric key (numeric value in r or in details)
+                const metricKey = topKeys.find(k => typeof r[k] === 'number')
+                  || detailKeys.find(k => typeof details[k] === 'number');
+
+                // Detect candidate/ranking dimension key (non-metric property)
+                const entityKey = topKeys.find(k => k !== metricKey)
+                  || detailKeys.find(k => k !== metricKey);
+
+                // Extract values with safe fallbacks
+                const entityValue = (entityKey ? (r[entityKey] ?? details[entityKey]) : null)
+                  ?? (r?.rank ? `Candidate #${r.rank}` : `Candidate #${idx + 1}`);
+
+                const metricValue = (metricKey ? (r[metricKey] ?? details[metricKey]) : null) ?? '—';
+                const rankNum = r?.rank ?? (idx + 1);
+
                 return (
-                  <tr key={r.rank}>
-                    <td><strong>#{r.rank}</strong></td>
-                    <td>{r.details[entityKey]}</td>
-                    <td>{r.details[metricKey]}</td>
+                  <tr key={r?.rank ?? idx}>
+                    <td><strong>#{rankNum}</strong></td>
+                    <td>{entityValue}</td>
+                    <td>{metricValue}</td>
                   </tr>
                 );
               })}

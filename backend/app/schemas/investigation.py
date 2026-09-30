@@ -79,17 +79,34 @@ class InvestigationReviewResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class InvestigationTurnResponse(BaseModel):
+    """
+    Schema for representing a persistent multi-turn conversation turn.
+    """
+    turn_id: str = Field(..., description="Unique turn identifier.")
+    investigation_id: str = Field(..., description="Associated investigation identifier.")
+    turn_number: int = Field(..., description="1-indexed sequential turn number.")
+    user_question: str = Field(..., description="User question for this turn.")
+    execution_time_ms: Optional[float] = Field(None, description="Backend execution duration in milliseconds.")
+    result_json: Optional[str] = Field(None, description="Serialized AskResponse JSON result for this turn.")
+    created_at: datetime = Field(..., description="UTC timestamp of turn creation.")
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class InvestigationDetail(InvestigationSummary):
     """
     Detailed investigation schema including full AskResponse JSON payload, error context,
-    and Human-in-the-Loop review history.
+    Human-in-the-Loop review history, and conversation turn history.
     """
     result_json: Optional[str] = Field(None, description="Serialized AskResponse JSON result.")
     error_message: Optional[str] = Field(None, description="Error message if status is FAILED.")
     latest_review: Optional[InvestigationReviewResponse] = Field(None, description="Most recent human review record if present.")
     review_count: int = Field(default=0, description="Total number of human reviews submitted.")
+    turns: list[InvestigationTurnResponse] = Field(default_factory=list, description="Ordered conversation turn records.")
 
     model_config = ConfigDict(from_attributes=True)
+
 
 
 class InvestigationReassessRequest(BaseModel):

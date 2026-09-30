@@ -153,3 +153,54 @@ def test_get_metrics_summary_route(client, test_db_session):
     assert isinstance(data["status_counts"], dict)
     assert isinstance(data["review_counts"], dict)
     assert isinstance(data["robustness_counts"], dict)
+
+
+def test_post_ask_multi_turn_continuation(client, test_db_session):
+    """
+    Verifies POST /api/ask with existing investigation_id appends Turn 2 without creating a new Investigation.
+    """
+    initial_inv_count = len(InvestigationService.list_investigations(test_db_session, limit=100))
+
+    # Turn 1
+    res1 = client.post("/api/ask", json={"question": "Multi-turn Q1", "max_turns": 1})
+    assert res1.status_code == 200
+    data1 = res1.json()
+    inv_id = data1["investigation_id"]
+    assert inv_id is not None
+
+    # Turn 2 (Continuation)
+    res2 = client.post("/api/ask", json={
+        "question": "Why did North outperform South?",
+        "investigation_id": inv_id,
+        "max_turns": 1
+    })
+    assert res2.status_code == 200
+    data2 = res2.json()
+    assert data2["investigation_id"] == inv_id
+
+    # Verify total investigations count incremented by exactly 1 (not 2)
+    new_inv_count = len(InvestigationService.list_investigations(test_db_session, limit=100))
+    assert new_inv_count == initial_inv_count + 1
+
+    # Verify detail returns 2 turns in chronological order
+    detail_res = client.get(f"/api/investigations/{inv_id}")
+    assert detail_res.status_code == 200
+    detail = detail_res.json()
+    assert "turns" in detail
+    assert len(detail["turns"]) == 2
+    assert detail["turns"][0]["turn_number"] == 1
+    assert detail["turns"][0]["user_question"] == "Multi-turn Q1"
+    assert detail["turns"][1]["turn_number"] == 2
+    assert detail["turns"][1]["user_question"] == "Why did North outperform South?"
+
+
+def test_post_ask_invalid_investigation_id_returns_404(client):
+    """
+    Verifies POST /api/ask with non-existent investigation_id returns HTTP 404.
+    """
+    res = client.post("/api/ask", json={
+        "question": "Orphan follow-up query",
+        "investigation_id": "inv_nonexistent_9999"
+    })
+    assert res.status_code == 404
+    assert "not found" in res.json()["detail"].lower()

@@ -175,6 +175,62 @@ export const MOCK_ASK_RESPONSE = {
   error: null
 };
 
+// In-memory store for mock investigations and their turns
+const mockInvestigationStore = new Map();
+
+/**
+ * Deterministic mock response generator for POST /api/ask with multi-turn continuation support
+ */
+export function getMockAskResponse(question, investigationId = null) {
+  const targetId = investigationId || "inv_mock_123456";
+  let stored = mockInvestigationStore.get(targetId);
+
+  if (!stored) {
+    stored = {
+      investigation_id: targetId,
+      created_at: "2026-09-30T00:35:00Z",
+      turns: []
+    };
+    mockInvestigationStore.set(targetId, stored);
+  }
+
+  const turnNum = stored.turns.length + 1;
+  const isFollowUp = turnNum > 1;
+
+  const qText = question || (isFollowUp ? "Follow-up question" : MOCK_ASK_RESPONSE.question);
+  const aText = isFollowUp
+    ? `Turn ${turnNum} Follow-up Analysis: Verified database query execution for '${qText}'. Primary metrics in North region remain supported by SQL evidence.`
+    : MOCK_ASK_RESPONSE.answer;
+
+  const mockPayload = {
+    ...MOCK_ASK_RESPONSE,
+    investigation_id: targetId,
+    question: qText,
+    answer: aText,
+    metadata: {
+      ...MOCK_ASK_RESPONSE.metadata,
+      investigation_id: targetId,
+      total_turns: turnNum
+    }
+  };
+
+  const newTurn = {
+    turn_id: `turn_mock_${turnNum}_${Math.random().toString(36).substring(2, 6)}`,
+    investigation_id: targetId,
+    turn_number: turnNum,
+    question: qText,
+    answer: aText,
+    evidence_count: 3,
+    tool_calls_count: 1,
+    execution_time_ms: 14.2 + (turnNum - 1) * 2,
+    created_at: new Date().toISOString(),
+    result_payload: mockPayload
+  };
+
+  stored.turns.push(newTurn);
+  return mockPayload;
+}
+
 export const PRESET_QUESTIONS = [
   "What is our gross revenue by region?",
   "Show top 5 products by total revenue",
@@ -247,24 +303,91 @@ export function getMockReviewResponse(investigationId, reviewStatus, reviewerId,
  * Deterministic mock response generator for GET /api/investigations/{id}
  */
 export function getMockInvestigationDetail(investigationId) {
+  const targetId = investigationId || "inv_mock_123456";
+  const stored = mockInvestigationStore.get(targetId);
+
+  if (stored && stored.turns.length > 0) {
+    const latestTurn = stored.turns[stored.turns.length - 1];
+    return {
+      investigation_id: targetId,
+      question: latestTurn.question,
+      status: "COMPLETED",
+      created_at: stored.created_at || "2026-09-30T00:35:00Z",
+      completed_at: new Date().toISOString(),
+      execution_time_ms: 14.2,
+      turns_used: stored.turns.length,
+      tool_calls_count: stored.turns.length,
+      evidence_count: 3 * stored.turns.length,
+      claims_count: 3,
+      robustness_status: "STABLE",
+      result_json: JSON.stringify(latestTurn.result_payload || MOCK_ASK_RESPONSE),
+      error_message: null,
+      latest_review: null,
+      review_count: 0,
+      turns: stored.turns.map((t) => ({
+        turn_id: t.turn_id,
+        investigation_id: targetId,
+        turn_number: t.turn_number,
+        question: t.question,
+        answer: t.answer,
+        evidence_count: t.evidence_count,
+        tool_calls_count: t.tool_calls_count,
+        execution_time_ms: t.execution_time_ms,
+        created_at: t.created_at
+      }))
+    };
+  }
+
+  const defaultTurns = [
+    {
+      turn_id: "turn_1",
+      investigation_id: targetId,
+      turn_number: 1,
+      question: targetId === "inv_mock_789012" ? "Show top 5 products by total revenue" : MOCK_ASK_RESPONSE.question,
+      answer: targetId === "inv_mock_789012"
+        ? "Top 5 products generated ₹3,450,000 total revenue across key segments."
+        : MOCK_ASK_RESPONSE.answer,
+      evidence_count: 3,
+      tool_calls_count: 1,
+      execution_time_ms: 14.2,
+      created_at: "2026-09-30T00:35:00Z"
+    }
+  ];
+
+  if (targetId === "inv_mock_789012") {
+    defaultTurns.push({
+      turn_id: "turn_2",
+      investigation_id: targetId,
+      turn_number: 2,
+      question: "Which product had the highest month-over-month growth?",
+      answer: "Product A demonstrated 34.2% MoM growth, outperforming Product B by 12.5%.",
+      evidence_count: 4,
+      tool_calls_count: 1,
+      execution_time_ms: 18.5,
+      created_at: "2026-09-29T18:20:00Z"
+    });
+  }
+
   return {
-    investigation_id: investigationId || "inv_mock_123456",
-    question: MOCK_ASK_RESPONSE.question,
-    status: "COMPLETED",
+    investigation_id: targetId,
+    question: defaultTurns[defaultTurns.length - 1].question,
+    status: targetId === "inv_mock_789012" ? "REQUIRES_REVIEW" : "COMPLETED",
     created_at: "2026-09-30T00:35:00Z",
     completed_at: "2026-09-30T00:35:02Z",
     execution_time_ms: 14.2,
-    turns_used: 1,
-    tool_calls_count: 1,
-    evidence_count: 3,
+    turns_used: defaultTurns.length,
+    tool_calls_count: defaultTurns.length,
+    evidence_count: targetId === "inv_mock_789012" ? 4 : 3,
     claims_count: 3,
-    robustness_status: "STABLE",
+    robustness_status: targetId === "inv_mock_789012" ? "SENSITIVE" : "STABLE",
     result_json: JSON.stringify(MOCK_ASK_RESPONSE),
     error_message: null,
     latest_review: null,
-    review_count: 0
+    review_count: 0,
+    turns: defaultTurns
   };
 }
+
 
 /**
  * Deterministic mock response generator for GET /api/investigations

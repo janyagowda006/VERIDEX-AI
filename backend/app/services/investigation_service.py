@@ -6,14 +6,15 @@ from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, func
 
-from app.models.investigation import Investigation, InvestigationReview, utcnow
+from app.models.investigation import Investigation, InvestigationReview, InvestigationTurn, utcnow
 from app.schemas.investigation import (
     InvestigationStatus,
     InvestigationSummary,
     InvestigationDetail,
     InvestigationReviewCreate,
     InvestigationReviewStatus,
-    InvestigationMetricsSummary
+    InvestigationMetricsSummary,
+    InvestigationTurnResponse
 )
 from app.schemas.ai import AskResponse
 from app.services.robustness import ROBUSTNESS_STATUS_SENSITIVE
@@ -258,6 +259,11 @@ class InvestigationService:
         """Generates a unique review identifier with 'rev_' prefix."""
         return f"rev_{uuid.uuid4().hex[:12]}"
 
+    @staticmethod
+    def generate_turn_id() -> str:
+        """Generates a unique conversation turn identifier with 'turn_' prefix."""
+        return f"turn_{uuid.uuid4().hex[:12]}"
+
     @classmethod
     def create_review(
         cls,
@@ -380,3 +386,95 @@ class InvestigationService:
             robustness_counts=robustness_counts,
             average_execution_time_ms=avg_exec_time
         )
+
+    @classmethod
+    def create_turn(
+        cls,
+        db: Session,
+        investigation_id: str,
+        user_question: str,
+        response: Optional[Any] = None,
+        execution_time_ms: Optional[float] = None,
+        turn_number: Optional[int] = None
+    ) -> InvestigationTurn:
+        """
+        Creates and persists a new append-only InvestigationTurn record.
+        Deterministically computes 1-indexed turn_number if not provided.
+        Raises ValueError if investigation_id does not exist.
+        """
+        investigation = cls.get_investigation_by_id(db=db, investigation_id=investigation_id)
+        if not investigation:
+            raise ValueError(f"Investigation with ID '{investigation_id}' not found.")
+
+        if turn_number is None:
+            max_turn = (
+                db.query(func.max(InvestigationTurn.turn_number))
+                .filter(InvestigationTurn.investigation_id == investigation_id)
+                .scalar()
+            )
+            turn_num = (max_turn + 1) if max_turn is not None else 1
+        else:
+            turn_num = int(turn_number)
+
+        result_json_str = None
+        if response is not None:
+            if hasattr(response, "model_dump_json"):
+                result_json_str = response.model_dump_json()
+            elif isinstance(response, str):
+                result_json_str = response
+            else:
+                result_json_str = json.dumps(response, default=str)
+
+        exec_time = round(float(execution_time_ms), 2) if execution_time_ms is not None else None
+
+        turn = InvestigationTurn(
+            turn_id=cls.generate_turn_id(),
+            investigation_id=investigation_id,
+            turn_number=turn_num,
+            user_question=user_question,
+            execution_time_ms=exec_time,
+            result_json=result_json_str,
+            created_at=utcnow()
+        )
+
+        try:
+            db.add(turn)
+            db.commit()
+            db.refresh(turn)
+            return turn
+        except Exception:
+            db.rollback()
+            raise
+
+    @classmethod
+    def list_turns_for_investigation(
+        cls,
+        db: Session,
+        investigation_id: str
+    ) -> List[InvestigationTurn]:
+        return (
+            db.query(InvestigationTurn)
+            .filter(InvestigationTurn.investigation_id == investigation_id)
+            .order_by(InvestigationTurn.turn_number.asc())
+            .all()
+        )
+
+    @classmethod
+    def list_recent_turns_for_investigation(
+        cls,
+        db: Session,
+        investigation_id: str,
+        limit: int = 3
+    ) -> List[InvestigationTurn]:
+        """
+        Retrieves up to the latest K turns for an investigation ordered chronologically (turn_number ASC).
+        Used for bounded prior conversation context injection.
+        """
+        turns_desc = (
+            db.query(InvestigationTurn)
+            .filter(InvestigationTurn.investigation_id == investigation_id)
+            .order_by(InvestigationTurn.turn_number.desc())
+            .limit(limit)
+            .all()
+        )
+        return sorted(turns_desc, key=lambda t: t.turn_number)

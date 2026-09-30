@@ -8,7 +8,7 @@ from app.schemas.ai import AskRequest
 from app.schemas.evidence import EvidenceItem, EvidenceType, ClaimEvidence
 from app.ai.prompts import SYSTEM_PROMPT_V1, format_schema_for_prompt
 from app.ai.provider import BaseLLMProvider, MockLLMProvider, GeminiProvider, ModelResponse, ToolCallRequest, get_llm_provider
-from app.ai.orchestrator import run_investigation_loop, _build_claims_and_evidence, _clean_text_tags
+from app.ai.orchestrator import run_investigation_loop, _build_claims_and_evidence, _clean_text_tags, _format_prior_turns_context
 from app.services.schema_introspection import get_database_schema
 
 client = TestClient(app)
@@ -700,3 +700,58 @@ def test_ai3_duplicate_evidence_tags_uniquified():
 
     assert len(claims) == 1
     assert claims[0].evidence_ids == ["ev_fact_1"]
+
+
+def test_format_prior_turns_context_bounds_and_formatting():
+    """
+    Verifies _format_prior_turns_context formats prior user questions and assistant answers
+    with strict fact-grounding instructions.
+    """
+    mock_turn1 = MagicMock()
+    mock_turn1.turn_number = 1
+    mock_turn1.user_question = "What is revenue by region?"
+    mock_turn1.result_json = '{"answer": "North generated $1.2M."}'
+
+    mock_turn2 = MagicMock()
+    mock_turn2.turn_number = 2
+    mock_turn2.user_question = "Why did North outperform South?"
+    mock_turn2.result_json = '{"answer": "North had strong marketing."}'
+
+    context_text = _format_prior_turns_context([mock_turn1, mock_turn2])
+
+    assert "<PRIOR_CONVERSATION_CONTEXT>" in context_text
+    assert "</PRIOR_CONVERSATION_CONTEXT>" in context_text
+    assert "Turn 1:" in context_text
+    assert "What is revenue by region?" in context_text
+    assert "North generated $1.2M." in context_text
+    assert "Turn 2:" in context_text
+    assert "Why did North outperform South?" in context_text
+    assert "MUST NOT be treated as fresh FACT evidence" in context_text
+
+
+def test_orchestrator_prior_turns_context_injection_and_fact_isolation(test_db_session):
+    """
+    Verifies run_investigation_loop injects prior turn context into LLM prompt
+    while keeping FACT evidence strictly tied to current-turn SQL execution.
+    """
+    mock_turn = MagicMock()
+    mock_turn.turn_number = 1
+    mock_turn.user_question = "Initial revenue query"
+    mock_turn.result_json = '{"answer": "Initial findings"}'
+
+    provider = MockLLMProvider()
+    res = run_investigation_loop(
+        question="Was product mix the main driver?",
+        db=test_db_session,
+        provider=provider,
+        max_turns=2,
+        prior_turns=[mock_turn]
+    )
+
+    assert res.success is True
+    # FACT evidence collected in current turn stems from current SQL execution only
+    for item in res.evidence:
+        if item.evidence_type == EvidenceType.FACT:
+            assert item.description.startswith("Turn")
+            assert item.source is not None
+            assert item.source.sql is not None

@@ -272,15 +272,55 @@ def _build_claims_and_evidence(
     return claims, final_evidence
 
 
+def _format_prior_turns_context(prior_turns: List[Any]) -> str:
+    """
+    Formats bounded prior conversation turns into structured prompt context.
+    Strictly instructs the model that prior context is historical reference only, not fresh FACT evidence.
+    """
+    if not prior_turns:
+        return ""
+
+    context_lines = [
+        "<PRIOR_CONVERSATION_CONTEXT>",
+        "CRITICAL INSTRUCTION: The following conversation history provides context for the current follow-up question.",
+        "Prior assistant statements are historical context ONLY and MUST NOT be treated as fresh FACT evidence.",
+        "Current turn FACT evidence MUST be derived exclusively from SQL tool calls executed in the current turn.",
+        ""
+    ]
+
+    for turn in prior_turns:
+        t_num = getattr(turn, "turn_number", 1)
+        u_q = getattr(turn, "user_question", "")
+        res_json_raw = getattr(turn, "result_json", None)
+        ans_text = ""
+        if res_json_raw:
+            try:
+                payload = json.loads(res_json_raw) if isinstance(res_json_raw, str) else res_json_raw
+                ans_text = payload.get("answer", "")
+            except Exception:
+                pass
+
+        context_lines.append(f"Turn {t_num}:")
+        context_lines.append(f"User Question: {u_q}")
+        if ans_text:
+            context_lines.append(f"Assistant Answer: {ans_text}")
+        context_lines.append("")
+
+    context_lines.append("</PRIOR_CONVERSATION_CONTEXT>")
+    return "\n".join(context_lines)
+
+
 def run_investigation_loop(
     question: str,
     db: Session,
     provider: BaseLLMProvider,
-    max_turns: int = 3
+    max_turns: int = 3,
+    prior_turns: Optional[List[Any]] = None
 ) -> AskResponse:
     """
     Custom bounded decision intelligence orchestration loop with Evidence Assembly, Decision Engine, and Robustness Testing.
     Connects LLM reasoning to the safe read-only SQL tool and constructs deterministic decision intelligence payloads.
+    Supports bounded prior conversation turn context for multi-turn investigations.
     """
     if db is None:
         return AskResponse(
@@ -307,8 +347,14 @@ def run_investigation_loop(
         }
     }]
 
+    prior_context_block = _format_prior_turns_context(prior_turns) if prior_turns else ""
+    if prior_context_block:
+        full_user_content = f"{prior_context_block}\n\nCURRENT QUESTION:\n{question}"
+    else:
+        full_user_content = question
+
     messages: List[Dict[str, Any]] = [
-        {"role": "user", "content": question}
+        {"role": "user", "content": full_user_content}
     ]
 
     tool_call_records: List[ToolCallRecord] = []

@@ -11,6 +11,7 @@ class AskRequest(BaseModel):
     """
     question: str = Field(..., description="The business question in natural language.")
     max_turns: Optional[int] = Field(default=3, ge=1, le=5, description="Maximum orchestration reasoning turns.")
+    investigation_id: Optional[str] = Field(default=None, description="Optional existing investigation ID to continue an ongoing multi-turn investigation.")
 
 
 class ToolCallRecord(BaseModel):
@@ -30,6 +31,7 @@ class AskResponse(BaseModel):
     success: bool
     question: str
     answer: str
+    investigation_id: Optional[str] = Field(default=None, description="Associated persistent investigation ID.")
     claims: List[ClaimEvidence] = Field(default_factory=list, description="Claim-to-evidence mappings.")
     evidence: List[EvidenceItem] = Field(default_factory=list, description="Categorized evidence items (FACT, DERIVED_FACT, INFERENCE).")
     analysis: Optional[DecisionAnalysis] = Field(default=None, description="Deterministic decision analysis, recommendation, and robustness evaluation.")

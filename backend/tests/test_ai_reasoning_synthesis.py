@@ -230,7 +230,7 @@ def test_ask_response_schema_contract_preserved():
         error=None
     )
     d = resp.model_dump()
-    expected_keys = {"success", "question", "answer", "claims", "evidence", "analysis", "tool_calls", "metadata", "error"}
+    expected_keys = {"success", "question", "answer", "claims", "evidence", "analysis", "tool_calls", "metadata", "error", "investigation_id"}
     assert set(d.keys()) == expected_keys
 
 

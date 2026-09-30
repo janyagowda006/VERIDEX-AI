@@ -2,7 +2,7 @@ import pytest
 import time
 from unittest.mock import MagicMock
 from app.services.investigation_service import InvestigationService, _sanitize_error_text
-from app.schemas.investigation import InvestigationStatus, InvestigationReviewCreate
+from app.schemas.investigation import InvestigationStatus, InvestigationReviewCreate, InvestigationDetail
 from app.schemas.ai import AskResponse
 from app.schemas.decision import DecisionAnalysis, RobustnessCheck
 from app.services.robustness import (
@@ -282,3 +282,109 @@ def test_get_metrics_summary_aggregation_and_deltas(test_db_session):
     assert updated_metrics.robustness_counts["SENSITIVE"] == initial_metrics.robustness_counts["SENSITIVE"] + 1
 
     assert updated_metrics.average_execution_time_ms is not None
+
+
+def test_create_turn_first_and_second_turn_deterministic_ordering(test_db_session):
+    """
+    Verifies create_turn creates sequential turn 1 and turn 2 with deterministic ordering.
+    """
+    inv = InvestigationService.create_investigation(test_db_session, question="Turn Test Q1")
+
+    resp1 = AskResponse(success=True, question="Turn Test Q1", answer="Answer 1", claims=[], evidence=[])
+    turn1 = InvestigationService.create_turn(
+        db=test_db_session,
+        investigation_id=inv.investigation_id,
+        user_question="Turn Test Q1",
+        response=resp1,
+        execution_time_ms=120.0
+    )
+
+    assert turn1 is not None
+    assert turn1.turn_id.startswith("turn_")
+    assert turn1.investigation_id == inv.investigation_id
+    assert turn1.turn_number == 1
+    assert turn1.user_question == "Turn Test Q1"
+    assert turn1.execution_time_ms == 120.0
+
+    resp2 = AskResponse(success=True, question="Why did North outperform South?", answer="Answer 2", claims=[], evidence=[])
+    turn2 = InvestigationService.create_turn(
+        db=test_db_session,
+        investigation_id=inv.investigation_id,
+        user_question="Why did North outperform South?",
+        response=resp2,
+        execution_time_ms=180.0
+    )
+
+    assert turn2 is not None
+    assert turn2.turn_number == 2
+
+    # Verify list retrieval ordering
+    turns = InvestigationService.list_turns_for_investigation(test_db_session, inv.investigation_id)
+    assert len(turns) == 2
+    assert turns[0].turn_number == 1
+    assert turns[1].turn_number == 2
+    assert turns[0].user_question == "Turn Test Q1"
+    assert turns[1].user_question == "Why did North outperform South?"
+
+
+def test_turn_roundtrip_persistence_and_immutability(test_db_session):
+    """
+    Verifies result_json payload round-trips via AskResponse validation and prior turns remain immutable.
+    """
+    inv = InvestigationService.create_investigation(test_db_session, question="Roundtrip Q")
+    resp = AskResponse(
+        success=True,
+        question="Roundtrip Q",
+        answer="Detailed answer text",
+        claims=[],
+        evidence=[],
+        metadata={"total_turns": 1}
+    )
+
+    turn = InvestigationService.create_turn(
+        db=test_db_session,
+        investigation_id=inv.investigation_id,
+        user_question="Roundtrip Q",
+        response=resp,
+        execution_time_ms=50.0
+    )
+
+    # Verify AskResponse round-trip deserialization
+    deserialized = AskResponse.model_validate_json(turn.result_json)
+    assert deserialized.success is True
+    assert deserialized.answer == "Detailed answer text"
+    assert deserialized.metadata["total_turns"] == 1
+
+    # Adding a second turn does NOT mutate turn 1
+    resp2 = AskResponse(success=True, question="Followup Q", answer="Answer 2", claims=[], evidence=[])
+    InvestigationService.create_turn(test_db_session, inv.investigation_id, "Followup Q", resp2, 60.0)
+
+    turns = InvestigationService.list_turns_for_investigation(test_db_session, inv.investigation_id)
+    assert len(turns) == 2
+    assert turns[0].user_question == "Roundtrip Q"
+    assert turns[0].execution_time_ms == 50.0
+    assert AskResponse.model_validate_json(turns[0].result_json).answer == "Detailed answer text"
+
+
+def test_legacy_investigation_empty_turns(test_db_session):
+    """
+    Verifies existing or legacy investigations without turn records return empty list without error.
+    """
+    inv = InvestigationService.create_investigation(test_db_session, question="Legacy investigation without turns")
+    turns = InvestigationService.list_turns_for_investigation(test_db_session, inv.investigation_id)
+    assert turns == []
+
+    detail = InvestigationDetail.model_validate(inv)
+    assert detail.turns == []
+
+
+def test_create_turn_nonexistent_investigation_raises_value_error(test_db_session):
+    """
+    Verifies create_turn raises ValueError when referencing a non-existent investigation ID.
+    """
+    with pytest.raises(ValueError, match="Investigation with ID 'inv_nonexistent_999' not found"):
+        InvestigationService.create_turn(
+            db=test_db_session,
+            investigation_id="inv_nonexistent_999",
+            user_question="Orphan turn question"
+        )

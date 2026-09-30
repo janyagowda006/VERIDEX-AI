@@ -1,5 +1,5 @@
 import {
-  MOCK_ASK_RESPONSE,
+  getMockAskResponse,
   getMockReassessResponse,
   getMockReviewResponse,
   getMockInvestigationDetail,
@@ -14,19 +14,26 @@ import {
  * @param {string} question - Business question text.
  * @param {number} maxTurns - Maximum investigation turns.
  * @param {boolean} useMock - Whether to return mock data.
+ * @param {string|null} investigationId - Optional persistent investigation ID for multi-turn continuations.
  * @returns {Promise<Object>} AskResponse object matching frozen backend contract.
  */
-export async function askQuestion(question, maxTurns = 3, useMock = false) {
+export async function askQuestion(question, maxTurns = 3, useMock = false, investigationId = null) {
   if (useMock) {
-    // Return deterministic mock response
+    // Return deterministic mock response with multi-turn support
     return new Promise((resolve) => {
       setTimeout(() => {
-        resolve({
-          ...MOCK_ASK_RESPONSE,
-          question: question || MOCK_ASK_RESPONSE.question
-        });
+        resolve(getMockAskResponse(question, investigationId));
       }, 500);
     });
+  }
+
+  const payload = {
+    question: question,
+    max_turns: maxTurns
+  };
+
+  if (investigationId) {
+    payload.investigation_id = investigationId;
   }
 
   const response = await fetch('/api/ask', {
@@ -34,10 +41,7 @@ export async function askQuestion(question, maxTurns = 3, useMock = false) {
     headers: {
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify({
-      question: question,
-      max_turns: maxTurns
-    })
+    body: JSON.stringify(payload)
   });
 
   if (!response.ok) {
@@ -54,6 +58,7 @@ export async function askQuestion(question, maxTurns = 3, useMock = false) {
 
   return await response.json();
 }
+
 
 /**
  * Executes dynamic metric robustness re-assessment on an existing persisted investigation.

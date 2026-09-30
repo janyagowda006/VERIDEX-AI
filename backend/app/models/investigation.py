@@ -31,6 +31,7 @@ class Investigation(Base):
     error_message = Column(Text, nullable=True)
 
     reviews = relationship("InvestigationReview", back_populates="investigation", cascade="all, delete-orphan", order_by="desc(InvestigationReview.reviewed_at)")
+    turns = relationship("InvestigationTurn", back_populates="investigation", cascade="all, delete-orphan", order_by="InvestigationTurn.turn_number.asc()")
 
 
 class InvestigationReview(Base):
@@ -48,3 +49,21 @@ class InvestigationReview(Base):
     reviewed_at = Column(DateTime(timezone=True), nullable=False, index=True, default=utcnow)
 
     investigation = relationship("Investigation", back_populates="reviews")
+
+
+class InvestigationTurn(Base):
+    """
+    SQLAlchemy ORM model for persistent append-only multi-turn conversation turns.
+    Stores sequential turn number, user question, execution duration, timestamp, and AskResponse JSON payload.
+    """
+    __tablename__ = "investigation_turns"
+
+    turn_id = Column(String(36), primary_key=True, index=True)
+    investigation_id = Column(String(36), ForeignKey("investigations.investigation_id"), nullable=False, index=True)
+    turn_number = Column(Integer, nullable=False, default=1, index=True)
+    user_question = Column(Text, nullable=False)
+    execution_time_ms = Column(Float, nullable=True)
+    result_json = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, index=True, default=utcnow)
+
+    investigation = relationship("Investigation", back_populates="turns")

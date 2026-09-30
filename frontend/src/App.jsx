@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { askQuestion, getInvestigationDetail } from './api/client.js';
 import { ThemeToggle } from './components/ThemeToggle.jsx';
 import { QuestionInput } from './components/QuestionInput.jsx';
+import { ConversationThread } from './components/ConversationThread.jsx';
 import { ExecutiveSummary } from './components/ExecutiveSummary.jsx';
 import { AnswerCard } from './components/AnswerCard.jsx';
 import { EvidencePanel } from './components/EvidencePanel.jsx';
@@ -14,6 +15,9 @@ import './App.css';
 
 function App() {
   const [data, setData] = useState(null);
+  const [activeInvestigationId, setActiveInvestigationId] = useState(null);
+  const [turns, setTurns] = useState([]);
+  const [activeTurnNumber, setActiveTurnNumber] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [useMock, setUseMock] = useState(true);
@@ -48,30 +52,67 @@ function App() {
     setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
   };
 
-  // Load initial mock investigation on mount
-  useEffect(() => {
-    handleRunInvestigation("What is our gross revenue by region?", true);
-  }, []);
+  const handleStartNewInvestigation = () => {
+    setActiveInvestigationId(null);
+    setTurns([]);
+    setActiveTurnNumber(1);
+    setData(null);
+    setError(null);
+    setSelectedEvidenceId(null);
+  };
 
-  const handleRunInvestigation = async (question, forceMock = useMock) => {
+  const handleRunInvestigation = async (question, forceMock = useMock, isNewInvestigation = false) => {
     setSelectedEvidenceId(null);
     setLoading(true);
     setError(null);
 
+    const invIdToSend = isNewInvestigation ? null : activeInvestigationId;
+
     try {
-      const res = await askQuestion(question, 3, forceMock);
+      const res = await askQuestion(question, 3, forceMock, invIdToSend);
       if (res.error) {
         setError(res.error);
-        setData(res);
-      } else {
-        setData(res);
       }
+
+      const targetInvId = res.investigation_id || res.metadata?.investigation_id || invIdToSend || "inv_mock_123456";
+      const isContinuation = Boolean(!isNewInvestigation && invIdToSend && targetInvId === invIdToSend);
+      const nextTurnNum = isContinuation ? turns.length + 1 : 1;
+
+      const newTurnItem = {
+        turn_id: `turn_${targetInvId}_${nextTurnNum}`,
+        investigation_id: targetInvId,
+        turn_number: nextTurnNum,
+        question: res.question || question,
+        answer: res.answer || "Investigation analysis completed.",
+        evidence_count: res.evidence ? res.evidence.length : (res.metadata?.total_evidence_items || 0),
+        tool_calls_count: res.tool_calls ? res.tool_calls.length : 1,
+        execution_time_ms: res.tool_calls?.[0]?.result?.metadata?.execution_time_ms || 14.2,
+        created_at: new Date().toISOString(),
+        result_payload: res
+      };
+
+      if (nextTurnNum === 1) {
+        setTurns([newTurnItem]);
+      } else {
+        setTurns((prev) => [...prev, newTurnItem]);
+      }
+
+      setActiveInvestigationId(targetInvId);
+      setActiveTurnNumber(nextTurnNum);
+      setData(res);
     } catch (err) {
       setError(err.message || "Failed to execute investigation request.");
     } finally {
       setLoading(false);
     }
   };
+
+  // Load initial mock investigation on mount
+  useEffect(() => {
+    handleRunInvestigation("What is our gross revenue by region?", true, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
 
   const handleSelectHistoricalInvestigation = async (invId) => {
     setSelectedEvidenceId(null);
@@ -102,11 +143,63 @@ function App() {
         }
       };
 
+      const fetchedTurns = detail.turns || [];
+      let turnItems = [];
+
+      if (fetchedTurns.length > 0) {
+        turnItems = fetchedTurns.map((t, idx) => ({
+          turn_id: t.turn_id || `turn_${detail.investigation_id}_${t.turn_number}`,
+          investigation_id: detail.investigation_id,
+          turn_number: t.turn_number,
+          question: t.question,
+          answer: t.answer,
+          evidence_count: t.evidence_count ?? 0,
+          tool_calls_count: t.tool_calls_count ?? 1,
+          execution_time_ms: t.execution_time_ms ?? 14.2,
+          created_at: t.created_at || new Date().toISOString(),
+          result_payload: idx === fetchedTurns.length - 1 ? combinedData : {
+            question: t.question,
+            answer: t.answer,
+            claims: [],
+            evidence: [],
+            metadata: { investigation_id: detail.investigation_id, total_turns: t.turn_number }
+          }
+        }));
+      } else {
+        turnItems = [
+          {
+            turn_id: `turn_${detail.investigation_id}_1`,
+            investigation_id: detail.investigation_id,
+            turn_number: 1,
+            question: detail.question || "Historical Business Question",
+            answer: combinedData.answer || "Historical analysis summary",
+            evidence_count: detail.evidence_count || (combinedData.evidence ? combinedData.evidence.length : 0),
+            tool_calls_count: detail.tool_calls_count || 1,
+            execution_time_ms: detail.execution_time_ms || 14.2,
+            created_at: detail.created_at || new Date().toISOString(),
+            result_payload: combinedData
+          }
+        ];
+      }
+
+      setTurns(turnItems);
+      setActiveInvestigationId(detail.investigation_id);
+      setActiveTurnNumber(turnItems[turnItems.length - 1].turn_number);
       setData(combinedData);
     } catch (err) {
       setError(err.message || "Failed to load historical investigation details.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSelectTurn = (turnNum) => {
+    const target = turns.find((t) => t.turn_number === turnNum);
+    if (target) {
+      setActiveTurnNumber(turnNum);
+      if (target.result_payload) {
+        setData(target.result_payload);
+      }
     }
   };
 
@@ -124,6 +217,17 @@ function App() {
             </div>
           </div>
           <div className="header-controls">
+            {activeInvestigationId && (
+              <button
+                type="button"
+                className="btn-new-investigation-header"
+                onClick={handleStartNewInvestigation}
+                aria-label="Start a new investigation"
+              >
+                <span className="btn-icon" aria-hidden="true">+</span>
+                New Thread
+              </button>
+            )}
             <button
               type="button"
               className="btn-analytics-toggle"
@@ -155,14 +259,28 @@ function App() {
       </header>
 
       <main className="content" role="main">
+        {/* Persistent Multi-Turn Conversation Thread Timeline */}
+        <ConversationThread
+          turns={turns}
+          activeTurnNumber={activeTurnNumber}
+          onSelectTurn={handleSelectTurn}
+          activeInvestigationId={activeInvestigationId}
+          onNewInvestigation={handleStartNewInvestigation}
+          loading={loading}
+        />
+
+        {/* Business Data Question & Follow-Up Input */}
         <QuestionInput
-          onSubmit={(q) => handleRunInvestigation(q, useMock)}
+          onSubmit={(q) => handleRunInvestigation(q, useMock, false)}
           loading={loading}
           useMock={useMock}
           onToggleMock={(val) => {
             setUseMock(val);
-            handleRunInvestigation(data?.question || "What is our gross revenue by region?", val);
+            handleRunInvestigation(data?.question || "What is our gross revenue by region?", val, true);
           }}
+          activeInvestigationId={activeInvestigationId}
+          turnCount={turns.length}
+          onStartNew={handleStartNewInvestigation}
         />
 
         {error && (

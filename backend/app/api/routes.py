@@ -17,7 +17,8 @@ from app.schemas.investigation import (
     InvestigationReassessResponse,
     InvestigationReviewCreate,
     InvestigationReviewResponse,
-    InvestigationMetricsSummary
+    InvestigationMetricsSummary,
+    InvestigationTurnResponse
 )
 from app.services.investigation_service import InvestigationService
 from app.ai.provider import BaseLLMProvider, get_llm_provider
@@ -91,39 +92,57 @@ def ask_business_question(
     """
     Natural language decision intelligence endpoint.
     Orchestrates AI reasoning with safe tool calling, evidence assembly, decision intelligence analysis, and robustness testing.
-    Persists durable investigation lifecycle state (IN_PROGRESS -> COMPLETED / REQUIRES_REVIEW / FAILED).
+    Supports single-turn initialization and multi-turn conversation continuation via investigation_id.
+    Persists durable investigation turns and overall lifecycle state.
     """
     start_time = time.perf_counter()
     inv_record = None
+    prior_turns = None
 
-    # Step 1. Persist IN_PROGRESS investigation record
-    try:
-        inv_record = InvestigationService.create_investigation(
-            db=db,
-            question=request.question
-        )
-    except Exception:
-        pass
+    if request.investigation_id:
+        inv_record = InvestigationService.get_investigation_by_id(db=db, investigation_id=request.investigation_id)
+        if not inv_record:
+            raise HTTPException(status_code=404, detail=f"Investigation with ID '{request.investigation_id}' not found.")
+        prior_turns = InvestigationService.list_recent_turns_for_investigation(db=db, investigation_id=request.investigation_id, limit=3)
+        inv_id = request.investigation_id
+    else:
+        try:
+            inv_record = InvestigationService.create_investigation(
+                db=db,
+                question=request.question
+            )
+        except Exception:
+            pass
+        inv_id = inv_record.investigation_id if inv_record else InvestigationService.generate_investigation_id()
 
-    inv_id = inv_record.investigation_id if inv_record else InvestigationService.generate_investigation_id()
-
-    # Step 2. Execute Orchestration Loop
     try:
         response = run_investigation_loop(
             question=request.question,
             db=db,
             provider=provider,
-            max_turns=request.max_turns or 3
+            max_turns=request.max_turns or 3,
+            prior_turns=prior_turns
         )
         end_time = time.perf_counter()
         exec_ms = (end_time - start_time) * 1000.0
 
-        # Attach investigation_id to metadata
         if response.metadata is None:
             response.metadata = {}
         response.metadata["investigation_id"] = inv_id
+        response.investigation_id = inv_id
 
-        # Step 3. Persist lifecycle completion status
+        # Persist append-only InvestigationTurn
+        try:
+            InvestigationService.create_turn(
+                db=db,
+                investigation_id=inv_id,
+                user_question=request.question,
+                response=response,
+                execution_time_ms=exec_ms
+            )
+        except Exception:
+            pass
+
         if inv_record:
             try:
                 if response.success:
@@ -191,7 +210,8 @@ def get_investigation_detail(
     db: Session = Depends(get_db)
 ):
     """
-    Retrieves full investigation detail including stored AskResponse result_json and latest human review info.
+    Retrieves full investigation detail including stored AskResponse result_json, latest human review info,
+    and ordered conversation turn history.
     Raises HTTP 404 if investigation record is not found.
     """
     record = InvestigationService.get_investigation_by_id(db=db, investigation_id=investigation_id)
@@ -201,12 +221,15 @@ def get_investigation_detail(
     detail = InvestigationDetail.model_validate(record)
     latest_rev = InvestigationService.get_latest_review(db=db, investigation_id=investigation_id)
     reviews = InvestigationService.list_reviews_for_investigation(db=db, investigation_id=investigation_id)
+    turns = InvestigationService.list_turns_for_investigation(db=db, investigation_id=investigation_id)
 
     if latest_rev:
         detail.latest_review = InvestigationReviewResponse.model_validate(latest_rev)
     detail.review_count = len(reviews)
+    detail.turns = [InvestigationTurnResponse.model_validate(t) for t in turns]
 
     return detail
+
 
 
 @router.post("/api/investigations/{investigation_id}/reassess", response_model=InvestigationReassessResponse)

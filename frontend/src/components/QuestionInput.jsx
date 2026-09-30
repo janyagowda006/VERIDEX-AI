@@ -1,7 +1,15 @@
 import React, { useState } from 'react';
 import { PRESET_QUESTIONS } from '../mocks/mockData.js';
 
-export function QuestionInput({ onSubmit, loading, useMock, onToggleMock }) {
+export function QuestionInput({
+  onSubmit,
+  loading,
+  useMock,
+  onToggleMock,
+  activeInvestigationId = null,
+  turnCount = 0,
+  onStartNew
+}) {
   const [question, setQuestion] = useState('What is our gross revenue by region?');
 
   const handleSubmit = (e) => {
@@ -24,28 +32,57 @@ export function QuestionInput({ onSubmit, loading, useMock, onToggleMock }) {
     onSubmit(presetText);
   };
 
+  const isFollowUp = Boolean(activeInvestigationId && turnCount > 0);
+
   return (
     <div className="card question-card" role="region" aria-label="Business Data Investigation Query">
       <div className="card-header question-card-header">
         <div>
-          <h2>Investigate Business Data</h2>
+          <div className="question-header-top-row">
+            <h2>{isFollowUp ? 'Ask Follow-Up Question' : 'Investigate Business Data'}</h2>
+            {isFollowUp && (
+              <span className="thread-status-badge" title={`Active investigation ID: ${activeInvestigationId}`}>
+                <span className="status-dot" aria-hidden="true">●</span>
+                Continuing Thread • Turn {turnCount + 1}
+              </span>
+            )}
+          </div>
           <p className="question-desc">
-            Formulate natural language questions to inspect verifiable evidence and evaluate decision scenarios.
+            {isFollowUp
+              ? 'Ask follow-up questions to expand context. Context informs reasoning while SQL & Evidence remain strictly current-turn.'
+              : 'Formulate natural language questions to inspect verifiable evidence and evaluate decision scenarios.'}
           </p>
         </div>
-        <label className="mode-toggle-switch" title={`Switch to ${useMock ? 'Live API' : 'Mock'} mode`}>
-          <span className="toggle-label-text">
-            {useMock ? 'Mock API' : 'Live API'}
-          </span>
-          <input
-            type="checkbox"
-            checked={useMock}
-            onChange={(e) => onToggleMock(e.target.checked)}
-            aria-label="Toggle between Mock Mode and Live API Mode"
-          />
-          <span className="switch-slider" aria-hidden="true"></span>
-        </label>
+        <div className="question-header-actions">
+          {isFollowUp && onStartNew && (
+            <button
+              type="button"
+              className="btn-new-investigation-small"
+              onClick={() => {
+                setQuestion('What is our gross revenue by region?');
+                onStartNew();
+              }}
+              disabled={loading}
+              title="Start a fresh investigation thread"
+            >
+              + New Investigation
+            </button>
+          )}
+          <label className="mode-toggle-switch" title={`Switch to ${useMock ? 'Live API' : 'Mock'} mode`}>
+            <span className="toggle-label-text">
+              {useMock ? 'Mock API' : 'Live API'}
+            </span>
+            <input
+              type="checkbox"
+              checked={useMock}
+              onChange={(e) => onToggleMock(e.target.checked)}
+              aria-label="Toggle between Mock Mode and Live API Mode"
+            />
+            <span className="switch-slider" aria-hidden="true"></span>
+          </label>
+        </div>
       </div>
+
 
       <form onSubmit={handleSubmit} className="question-form">
         <div className="textarea-wrapper">

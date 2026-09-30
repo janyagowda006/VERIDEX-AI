@@ -9,6 +9,7 @@ import { DecisionCard } from './components/DecisionCard.jsx';
 import { RobustnessCard } from './components/RobustnessCard.jsx';
 import { HumanReviewPanel } from './components/HumanReviewPanel.jsx';
 import { InvestigationHistoryDrawer } from './components/InvestigationHistoryDrawer.jsx';
+import { GlobalAnalyticsPanel } from './components/GlobalAnalyticsPanel.jsx';
 import './App.css';
 
 function App() {
@@ -18,6 +19,7 @@ function App() {
   const [useMock, setUseMock] = useState(true);
   const [selectedEvidenceId, setSelectedEvidenceId] = useState(null);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [isAnalyticsOpen, setIsAnalyticsOpen] = useState(false);
 
   // Theme state: respects localStorage preference, fallback to system preference
   const [theme, setTheme] = useState(() => {
@@ -122,6 +124,15 @@ function App() {
             </div>
           </div>
           <div className="header-controls">
+            <button
+              type="button"
+              className="btn-analytics-toggle"
+              onClick={() => setIsAnalyticsOpen(true)}
+              aria-label="Open global analytics dashboard"
+            >
+              <span className="btn-icon" aria-hidden="true">📊</span>
+              Analytics
+            </button>
             <button
               type="button"
               className="btn-history-toggle"
@@ -253,6 +264,12 @@ function App() {
         isOpen={isHistoryOpen}
         onClose={() => setIsHistoryOpen(false)}
         onSelectInvestigation={handleSelectHistoricalInvestigation}
+        useMock={useMock}
+      />
+
+      <GlobalAnalyticsPanel
+        isOpen={isAnalyticsOpen}
+        onClose={() => setIsAnalyticsOpen(false)}
         useMock={useMock}
       />
     </div>

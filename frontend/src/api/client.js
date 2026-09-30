@@ -3,7 +3,8 @@ import {
   getMockReassessResponse,
   getMockReviewResponse,
   getMockInvestigationDetail,
-  getMockInvestigationsList
+  getMockInvestigationsList,
+  getMockAnalyticsSummary
 } from '../mocks/mockData.js';
 
 /**
@@ -249,6 +250,45 @@ export async function listInvestigations(limit = 20, offset = 0, useMock = false
       // fallback
     }
     throw new Error(detail || "Failed to retrieve investigation history.");
+  }
+
+  return await response.json();
+}
+
+/**
+ * Retrieves global investigation metrics summary including total counts, status distribution,
+ * human review decisions, robustness distribution, and average execution time.
+ * Connects to GET /api/investigations/metrics/summary
+ *
+ * @param {boolean} useMock - Whether to return mock data.
+ * @returns {Promise<Object>} InvestigationMetricsSummary object matching backend contract.
+ */
+export async function getAnalyticsSummary(useMock = false) {
+  if (useMock) {
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        resolve(getMockAnalyticsSummary());
+      }, 300);
+    });
+  }
+
+  const response = await fetch('/api/investigations/metrics/summary', {
+    method: 'GET',
+    headers: {
+      'Accept': 'application/json'
+    }
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    let detail = errorText;
+    try {
+      const jsonErr = JSON.parse(errorText);
+      if (jsonErr.detail) detail = typeof jsonErr.detail === 'string' ? jsonErr.detail : JSON.stringify(jsonErr.detail);
+    } catch {
+      // fallback
+    }
+    throw new Error(detail || "Failed to retrieve global analytics summary.");
   }
 
   return await response.json();

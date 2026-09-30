@@ -2960,3 +2960,169 @@ button.kpi-card-button:disabled {
 .select-investigation-btn:hover {
   background-color: var(--color-primary-hover);
 }
+
+
+/* ==========================================================================
+   Phase 9.5E: Global Analytics Dashboard & Panel Styles
+   ========================================================================== */
+
+.btn-analytics-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.85rem;
+  font-size: 0.825rem;
+  font-weight: 700;
+  border-radius: 6px;
+  border: 1px solid var(--border-light);
+  background-color: var(--bg-card-subtle);
+  color: var(--text-main);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-analytics-toggle:hover {
+  background-color: var(--bg-card-hover);
+  border-color: var(--border-medium);
+  transform: translateY(-1px);
+}
+
+.analytics-drawer-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(3px);
+  z-index: 1000;
+  display: flex;
+  justify-content: flex-end;
+  animation: fadeIn 0.2s ease;
+}
+
+.analytics-drawer-panel {
+  width: 520px;
+  max-width: 92vw;
+  height: 100%;
+  background-color: var(--bg-card);
+  border-left: 1px solid var(--border-light);
+  box-shadow: -4px 0 20px rgba(0, 0, 0, 0.2);
+  display: flex;
+  flex-direction: column;
+  animation: slideLeft 0.25s ease;
+}
+
+.analytics-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.analytics-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.analytics-section-title {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.analytics-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 0.75rem;
+}
+
+.analytics-kpi-card {
+  background-color: var(--bg-card-subtle);
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  padding: 0.85rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.distribution-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  background-color: var(--bg-card-subtle);
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.distribution-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.dist-meta-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.825rem;
+  color: var(--text-main);
+}
+
+.dist-label {
+  font-weight: 600;
+}
+
+.dist-value {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.dist-value strong {
+  color: var(--text-main);
+}
+
+.dist-bar-track {
+  width: 100%;
+  height: 8px;
+  background-color: var(--bg-card-hover, rgba(255, 255, 255, 0.08));
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.dist-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.3s ease-in-out;
+}
+
+/* Color classes for progress bars */
+.bar-completed,
+.bar-approved,
+.bar-stable {
+  background-color: #10b981;
+}
+
+.bar-requires-review,
+.bar-sensitive,
+.bar-flagged {
+  background-color: #f59e0b;
+}
+
+.bar-failed,
+.bar-rejected {
+  background-color: #ef4444;
+}
+
+.bar-in-progress {
+  background-color: #3b82f6;
+}
+
+.bar-insufficient {
+  background-color: #6b7280;
+}

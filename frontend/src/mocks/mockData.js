@@ -327,3 +327,31 @@ export function getMockInvestigationsList(limit = 20, offset = 0) {
 
   return items.slice(offset, offset + limit);
 }
+
+/**
+ * Deterministic mock response generator for GET /api/investigations/metrics/summary
+ * Matching backend InvestigationMetricsSummary schema.
+ */
+export function getMockAnalyticsSummary() {
+  return {
+    total_investigations: 12,
+    total_reviews: 5,
+    status_counts: {
+      COMPLETED: 8,
+      REQUIRES_REVIEW: 2,
+      FAILED: 1,
+      IN_PROGRESS: 1
+    },
+    review_counts: {
+      APPROVED: 3,
+      REJECTED: 1,
+      FLAGGED: 1
+    },
+    robustness_counts: {
+      STABLE: 7,
+      SENSITIVE: 3,
+      INSUFFICIENT_EVIDENCE: 1
+    },
+    average_execution_time_ms: 15.42
+  };
+}

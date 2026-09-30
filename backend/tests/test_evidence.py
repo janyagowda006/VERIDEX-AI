@@ -349,3 +349,248 @@ def test_ask_endpoint_evidence_response(test_db_session):
         assert isinstance(data["evidence"], list)
     finally:
         app.dependency_overrides.clear()
+
+
+# ---------------------------------------------------------
+# Phase 7A: Growth Rate, Margin Percent, Statistical Summary,
+# Safe Compound Metric, and Provenance Tests
+# ---------------------------------------------------------
+
+def test_growth_rate_positive():
+    calc = EvidenceCalculator()
+    res = calc.growth_rate(120.0, 100.0, "Current Revenue", "Previous Revenue", ["ev_fact_1"])
+    assert res.evidence_type == EvidenceType.DERIVED_FACT
+    assert res.calculation is not None
+    assert res.calculation.formula_name == "growth_rate"
+    assert res.calculation.output == 20.0
+    assert "ev_fact_1" in res.calculation.input_evidence_ids
+    assert "positive growth" in res.description.lower()
+    assert len(res.limitations) == 0
+
+
+def test_growth_rate_negative():
+    calc = EvidenceCalculator()
+    res = calc.growth_rate(80.0, 100.0, "Current", "Previous")
+    assert res.calculation.output == -20.0
+    assert "negative growth" in res.description.lower()
+
+
+def test_growth_rate_negative_previous_value():
+    calc = EvidenceCalculator()
+    res = calc.growth_rate(-80.0, -100.0, "Current", "Previous")
+    # ((-80 - (-100)) / -100) * 100 = (20 / -100) * 100 = -20.0%
+    assert res.calculation.output == -20.0
+    assert "negative growth" in res.description.lower()
+
+
+
+def test_growth_rate_zero():
+    calc = EvidenceCalculator()
+    res = calc.growth_rate(100.0, 100.0, "Current", "Previous")
+    assert res.calculation.output == 0.0
+    assert "zero growth" in res.description.lower()
+
+
+def test_growth_rate_zero_denominator():
+    calc = EvidenceCalculator()
+    res = calc.growth_rate(150.0, 0.0, "Current", "ZeroPrevious")
+    assert res.calculation.output is None
+    assert any("zero" in lim.lower() for lim in res.limitations)
+    assert "undefined" in res.description.lower()
+
+
+def test_growth_rate_decimal_values():
+    calc = EvidenceCalculator()
+    res = calc.growth_rate(123.45, 98.76, "Current", "Previous")
+    expected = round(((123.45 - 98.76) / 98.76) * 100, 2)
+    assert res.calculation.output == expected
+    assert res.calculation.output == 25.0
+
+
+def test_margin_percent_positive():
+    calc = EvidenceCalculator()
+    res = calc.margin_percent(1000.0, 700.0, "Gross Revenue", "COGS", ["ev_fact_2"])
+    assert res.evidence_type == EvidenceType.DERIVED_FACT
+    assert res.calculation.formula_name == "margin_percent"
+    assert res.calculation.output == 30.0
+    assert "ev_fact_2" in res.calculation.input_evidence_ids
+    assert len(res.limitations) == 0
+
+
+def test_margin_percent_zero():
+    calc = EvidenceCalculator()
+    res = calc.margin_percent(500.0, 500.0, "Revenue", "Cost")
+    assert res.calculation.output == 0.0
+
+
+def test_margin_percent_negative():
+    calc = EvidenceCalculator()
+    res = calc.margin_percent(800.0, 1000.0, "Revenue", "Cost")
+    assert res.calculation.output == -25.0
+
+
+def test_margin_percent_zero_revenue():
+    calc = EvidenceCalculator()
+    res = calc.margin_percent(0.0, 100.0, "ZeroRevenue", "Cost")
+    assert res.calculation.output is None
+    assert any("zero" in lim.lower() for lim in res.limitations)
+    assert "undefined" in res.description.lower()
+
+
+def test_margin_percent_decimal_values():
+    calc = EvidenceCalculator()
+    res = calc.margin_percent(1450.75, 980.50, "Revenue", "Cost")
+    expected = round(((1450.75 - 980.50) / 1450.75) * 100, 2)
+    assert res.calculation.output == expected
+    assert res.calculation.output == 32.41
+
+
+def test_statistical_summary_normal_unsorted_list():
+    calc = EvidenceCalculator()
+    values = [50, 10, 30, 20, 40]
+    res = calc.statistical_summary(values, "Order Amounts", ["ev_fact_3"])
+
+    assert res.evidence_type == EvidenceType.DERIVED_FACT
+    assert res.calculation.formula_name == "statistical_summary"
+    assert "ev_fact_3" in res.calculation.input_evidence_ids
+    output = res.calculation.output
+    assert output["count"] == 5
+    assert output["min"] == 10.0
+    assert output["max"] == 50.0
+    assert output["mean"] == 30.0
+    assert output["median"] == 30.0
+    assert output["q1"] == 15.0
+    assert output["q3"] == 45.0
+    assert output["iqr"] == 30.0
+    assert len(res.limitations) == 0
+
+
+def test_statistical_summary_single_value():
+    calc = EvidenceCalculator()
+    res = calc.statistical_summary([42.5], "SingleMetric")
+    output = res.calculation.output
+    assert output["count"] == 1
+    assert output["min"] == 42.5
+    assert output["max"] == 42.5
+    assert output["mean"] == 42.5
+    assert output["median"] == 42.5
+    assert output["q1"] == 42.5
+    assert output["q3"] == 42.5
+    assert output["iqr"] == 0.0
+
+
+def test_statistical_summary_two_values():
+    calc = EvidenceCalculator()
+    res = calc.statistical_summary([10.0, 30.0], "TwoValues")
+    output = res.calculation.output
+    assert output["count"] == 2
+    assert output["min"] == 10.0
+    assert output["max"] == 30.0
+    assert output["mean"] == 20.0
+    assert output["median"] == 20.0
+    assert output["q1"] == 10.0
+    assert output["q3"] == 30.0
+    assert output["iqr"] == 20.0
+
+
+def test_statistical_summary_repeated_values():
+    calc = EvidenceCalculator()
+    res = calc.statistical_summary([7, 7, 7, 7], "RepeatedValues")
+    output = res.calculation.output
+    assert output["count"] == 4
+    assert output["min"] == 7.0
+    assert output["max"] == 7.0
+    assert output["mean"] == 7.0
+    assert output["median"] == 7.0
+    assert output["iqr"] == 0.0
+
+
+def test_statistical_summary_negative_and_decimal_values():
+    calc = EvidenceCalculator()
+    values = [-10.5, 0.0, 10.5, 21.0]
+    res = calc.statistical_summary(values, "SpreadValues")
+    output = res.calculation.output
+    assert output["count"] == 4
+    assert output["min"] == -10.5
+    assert output["max"] == 21.0
+    assert output["mean"] == 5.25
+    assert output["median"] == 5.25
+    assert output["q1"] == -5.25
+    assert output["q3"] == 15.75
+    assert output["iqr"] == 21.0
+
+
+def test_statistical_summary_empty_list():
+    calc = EvidenceCalculator()
+    res = calc.statistical_summary([], "EmptyMetric")
+    assert res.calculation.output is None
+    assert any("empty" in lim.lower() for lim in res.limitations)
+
+
+def test_statistical_summary_invalid_non_numeric_input():
+    calc = EvidenceCalculator()
+    res = calc.statistical_summary([10.0, "corrupted", None, True], "CorruptedMetric")
+    assert res.calculation.output is None
+    assert any("non-numeric" in lim.lower() for lim in res.limitations)
+
+
+def test_compound_metric_registered_safe_template():
+    calc = EvidenceCalculator()
+    res = calc.compound_metric(
+        name="gross_margin_check",
+        formula_expr="((a - b) / a) * 100",
+        inputs={"revenue": 1000.0, "cost": 650.0},
+        input_evidence_ids=["ev_fact_9"]
+    )
+    assert res.evidence_type == EvidenceType.DERIVED_FACT
+    assert res.calculation.output == 35.0
+    assert "ev_fact_9" in res.calculation.input_evidence_ids
+    assert len(res.limitations) == 0
+
+
+def test_compound_metric_safe_difference():
+    calc = EvidenceCalculator()
+    res = calc.compound_metric(
+        name="sales_diff",
+        formula_expr="a - b",
+        inputs={"q1": 500.0, "q2": 320.0}
+    )
+    assert res.calculation.output == 180.0
+
+
+def test_compound_metric_rejects_arbitrary_eval_execution():
+    calc = EvidenceCalculator()
+    res = calc.compound_metric(
+        name="arbitrary_exploit_attempt",
+        formula_expr="__import__('os').system('echo pwned')",
+        inputs={"val": 100.0}
+    )
+    assert res.calculation.output is None
+    assert any("security rejection" in lim.lower() for lim in res.limitations)
+
+
+def test_compound_metric_rejects_invalid_inputs():
+    calc = EvidenceCalculator()
+    res = calc.compound_metric(
+        name="invalid_input_test",
+        formula_expr="a - b",
+        inputs={"a": "bad_string", "b": 10.0}
+    )
+    assert res.calculation.output is None
+    assert any("non-numeric" in lim.lower() for lim in res.limitations)
+
+
+def test_new_derived_evidence_provenance_preservation():
+    calc = EvidenceCalculator()
+    gr = calc.growth_rate(200.0, 100.0, "Rev2", "Rev1", ["ev_1", "ev_2"])
+    mp = calc.margin_percent(500.0, 250.0, "Rev", "Cost", ["ev_3"])
+    ss = calc.statistical_summary([1, 2, 3], "Vals", ["ev_4"])
+
+    for item in [gr, mp, ss]:
+        assert item.evidence_id.startswith("ev_derived_")
+        assert item.evidence_type == EvidenceType.DERIVED_FACT
+        assert item.source is None
+        assert item.calculation is not None
+        assert len(item.calculation.input_evidence_ids) > 0
+        assert item.calculation.formula_name != ""
+        assert item.calculation.formula != ""

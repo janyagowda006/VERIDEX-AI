@@ -4,8 +4,10 @@ import {
   getMockReviewResponse,
   getMockInvestigationDetail,
   getMockInvestigationsList,
-  getMockAnalyticsSummary
+  getMockAnalyticsSummary,
+  getMockExportData
 } from '../mocks/mockData.js';
+
 
 /**
  * VERIDEX API client for decision intelligence queries.
@@ -221,24 +223,41 @@ export async function getInvestigationDetail(investigationId, useMock = false) {
 }
 
 /**
- * Retrieves a paginated list of persistent investigation summaries.
+ * Retrieves a paginated list of persistent investigation summaries with optional search/filtering.
  * Connects to GET /api/investigations
  *
  * @param {number} limit - Maximum number of summary items.
  * @param {number} offset - Pagination offset.
  * @param {boolean} useMock - Whether to return mock data.
+ * @param {string|null} search - Keyword search over question or ID.
+ * @param {string|null} status - Filter by investigation lifecycle status.
+ * @param {string|null} robustnessStatus - Filter by decision robustness status.
  * @returns {Promise<Array<Object>>} Array of InvestigationSummary objects.
  */
-export async function listInvestigations(limit = 20, offset = 0, useMock = false) {
+export async function listInvestigations(
+  limit = 20,
+  offset = 0,
+  useMock = false,
+  search = null,
+  status = null,
+  robustnessStatus = null
+) {
   if (useMock) {
     return new Promise((resolve) => {
       setTimeout(() => {
-        resolve(getMockInvestigationsList(limit, offset));
+        resolve(getMockInvestigationsList(limit, offset, search, status, robustnessStatus));
       }, 300);
     });
   }
 
-  const response = await fetch(`/api/investigations?limit=${limit}&offset=${offset}`, {
+  const params = new URLSearchParams();
+  params.append('limit', String(limit));
+  params.append('offset', String(offset));
+  if (search && search.trim()) params.append('search', search.trim());
+  if (status && status.trim()) params.append('status', status.trim());
+  if (robustnessStatus && robustnessStatus.trim()) params.append('robustness_status', robustnessStatus.trim());
+
+  const response = await fetch(`/api/investigations?${params.toString()}`, {
     method: 'GET',
     headers: {
       'Accept': 'application/json'
@@ -257,6 +276,55 @@ export async function listInvestigations(limit = 20, offset = 0, useMock = false
     throw new Error(detail || "Failed to retrieve investigation history.");
   }
 
+  return await response.json();
+}
+
+/**
+ * Exports a persisted investigation audit report in JSON or Markdown format.
+ * Connects to GET /api/investigations/{id}/export?format=json|markdown
+ *
+ * @param {string} investigationId - Persistent investigation identifier.
+ * @param {string} format - Export format ('json' or 'markdown').
+ * @param {boolean} useMock - Whether to return mock data.
+ * @returns {Promise<Object|string>} JSON dict payload or Markdown text content.
+ */
+export async function exportInvestigationReport(investigationId, format = 'json', useMock = false) {
+  if (!investigationId) {
+    throw new Error("Investigation ID is required for report export.");
+  }
+
+  const fmt = (format || 'json').toLowerCase().trim();
+
+  if (useMock) {
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        resolve(getMockExportData(investigationId, fmt));
+      }, 300);
+    });
+  }
+
+  const response = await fetch(`/api/investigations/${encodeURIComponent(investigationId)}/export?format=${fmt}`, {
+    method: 'GET',
+    headers: {
+      'Accept': fmt === 'markdown' ? 'text/markdown, text/plain' : 'application/json'
+    }
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    let detail = errorText;
+    try {
+      const jsonErr = JSON.parse(errorText);
+      if (jsonErr.detail) detail = typeof jsonErr.detail === 'string' ? jsonErr.detail : JSON.stringify(jsonErr.detail);
+    } catch {
+      // fallback
+    }
+    throw new Error(detail || "Failed to export investigation report.");
+  }
+
+  if (fmt === 'markdown') {
+    return await response.text();
+  }
   return await response.json();
 }
 

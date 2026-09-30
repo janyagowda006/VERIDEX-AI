@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { listInvestigations } from '../api/client.js';
 
 export function InvestigationHistoryDrawer({
@@ -10,15 +10,16 @@ export function InvestigationHistoryDrawer({
   const [historyItems, setHistoryItems] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [robustnessFilter, setRobustnessFilter] = useState('');
 
-  useEffect(() => {
-    if (!isOpen) return;
-
+  const loadHistory = useCallback(() => {
     let isMounted = true;
     setHistoryLoading(true);
     setHistoryError(null);
 
-    listInvestigations(20, 0, useMock)
+    listInvestigations(20, 0, useMock, searchTerm, statusFilter, robustnessFilter)
       .then((items) => {
         if (isMounted) {
           setHistoryItems(items || []);
@@ -38,9 +39,22 @@ export function InvestigationHistoryDrawer({
     return () => {
       isMounted = false;
     };
-  }, [isOpen, useMock]);
+  }, [useMock, searchTerm, statusFilter, robustnessFilter]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    return loadHistory();
+  }, [isOpen, loadHistory]);
+
+  const handleResetFilters = () => {
+    setSearchTerm('');
+    setStatusFilter('');
+    setRobustnessFilter('');
+  };
 
   if (!isOpen) return null;
+
+  const hasActiveFilters = Boolean(searchTerm || statusFilter || robustnessFilter);
 
   return (
     <div className="history-drawer-overlay" onClick={onClose} role="dialog" aria-modal="true" aria-label="Investigation History Drawer">
@@ -50,7 +64,7 @@ export function InvestigationHistoryDrawer({
             <span className="header-icon" aria-hidden="true">📜</span>
             <div>
               <h3>Investigation Audit History</h3>
-              <p className="header-subtitle">Browse & load persistent business investigations</p>
+              <p className="header-subtitle">Browse, filter & load persistent business investigations</p>
             </div>
           </div>
           <button
@@ -64,10 +78,72 @@ export function InvestigationHistoryDrawer({
         </div>
 
         <div className="drawer-body">
+          {/* Search & Filter Bar */}
+          <div className="drawer-filter-bar">
+            <div className="filter-input-wrapper">
+              <input
+                type="text"
+                className="filter-search-input"
+                placeholder="Search question or ID..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                aria-label="Search investigations by question or ID"
+              />
+              {searchTerm && (
+                <button
+                  type="button"
+                  className="filter-search-clear"
+                  onClick={() => setSearchTerm('')}
+                  aria-label="Clear search input"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+
+            <div className="filter-select-row">
+              <select
+                className="filter-select"
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                aria-label="Filter by lifecycle status"
+              >
+                <option value="">All Statuses</option>
+                <option value="COMPLETED">COMPLETED</option>
+                <option value="REQUIRES_REVIEW">REQUIRES_REVIEW</option>
+                <option value="FAILED">FAILED</option>
+                <option value="IN_PROGRESS">IN_PROGRESS</option>
+              </select>
+
+              <select
+                className="filter-select"
+                value={robustnessFilter}
+                onChange={(e) => setRobustnessFilter(e.target.value)}
+                aria-label="Filter by robustness status"
+              >
+                <option value="">All Robustness</option>
+                <option value="STABLE">STABLE</option>
+                <option value="SENSITIVE">SENSITIVE</option>
+                <option value="INSUFFICIENT_EVIDENCE">INSUFFICIENT_EVIDENCE</option>
+              </select>
+
+              {hasActiveFilters && (
+                <button
+                  type="button"
+                  className="btn-clear-filters"
+                  onClick={handleResetFilters}
+                  aria-label="Reset all search filters"
+                >
+                  Reset
+                </button>
+              )}
+            </div>
+          </div>
+
           {historyLoading && (
             <div className="drawer-loading" role="status">
               <span className="btn-spinner" aria-hidden="true"></span>
-              <span>Loading investigation records...</span>
+              <span>Searching investigation records...</span>
             </div>
           )}
 
@@ -80,7 +156,20 @@ export function InvestigationHistoryDrawer({
 
           {!historyLoading && !historyError && historyItems.length === 0 && (
             <div className="drawer-empty">
-              <p>No historical investigations found.</p>
+              <p>
+                {hasActiveFilters
+                  ? "No historical investigations match your search filters."
+                  : "No historical investigations found."}
+              </p>
+              {hasActiveFilters && (
+                <button
+                  type="button"
+                  className="btn-reset-empty-filters"
+                  onClick={handleResetFilters}
+                >
+                  Clear Search Filters
+                </button>
+              )}
             </div>
           )}
 

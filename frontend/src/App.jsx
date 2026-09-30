@@ -306,7 +306,8 @@ function App() {
         {data && !loading && (
           <div className="investigation-flow">
             {/* Executive Summary & Key KPIs */}
-            <ExecutiveSummary data={data} onSelectEvidence={setSelectedEvidenceId} />
+            <ExecutiveSummary data={data} onSelectEvidence={setSelectedEvidenceId} useMock={useMock} />
+
 
             {/* 1. Synthesized Finding & Categorized Claims */}
             <section className="investigation-step" aria-label="Step 1: Synthesized Finding and Claims">

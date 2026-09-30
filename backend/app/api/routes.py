@@ -1,9 +1,11 @@
 import time
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import Response, JSONResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from app.core.db import get_db
+
 from app.models.business_data import Customer, Product, Order, OrderItem
 from app.services.metrics import calculate_net_revenue
 from app.services.schema_introspection import get_database_schema
@@ -21,8 +23,10 @@ from app.schemas.investigation import (
     InvestigationTurnResponse
 )
 from app.services.investigation_service import InvestigationService
+from app.services.report_exporter import ReportExporter
 from app.ai.provider import BaseLLMProvider, get_llm_provider
 from app.ai.orchestrator import run_investigation_loop
+
 
 router = APIRouter()
 
@@ -184,13 +188,25 @@ def ask_business_question(
 def list_investigations_history(
     limit: int = Query(default=20, ge=1, le=100, description="Maximum number of records to return."),
     offset: int = Query(default=0, ge=0, description="Offset pagination index."),
+    search: Optional[str] = Query(default=None, description="Optional keyword search term over investigation question or ID."),
+    status: Optional[str] = Query(default=None, description="Optional filter by investigation lifecycle status."),
+    robustness_status: Optional[str] = Query(default=None, description="Optional filter by decision robustness status."),
     db: Session = Depends(get_db)
 ):
     """
     Retrieves lightweight investigation summaries ordered newest-first (created_at DESC).
+    Supports optional search, status, and robustness_status filtering.
     """
-    records = InvestigationService.list_investigations(db=db, limit=limit, offset=offset)
+    records = InvestigationService.list_investigations(
+        db=db,
+        limit=limit,
+        offset=offset,
+        search=search,
+        status=status,
+        robustness_status=robustness_status
+    )
     return [InvestigationSummary.model_validate(r) for r in records]
+
 
 
 @router.get("/api/investigations/metrics/summary", response_model=InvestigationMetricsSummary)
@@ -289,3 +305,43 @@ def create_investigation_review(
         raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Review submission execution error: {str(exc)}")
+
+
+@router.get("/api/investigations/{investigation_id}/export")
+def export_investigation_report(
+    investigation_id: str,
+    format: str = Query(default="json", description="Export format: 'json' or 'markdown'"),
+    db: Session = Depends(get_db)
+):
+    """
+    Exports a persisted investigation as a structured JSON object or Markdown audit report.
+    Returns HTTP 404 for unknown investigation ID.
+    Returns HTTP 400 for unsupported format values.
+    Does NOT execute database SQL queries or call LLM reasoning provider.
+    """
+    fmt = (format or "json").lower().strip()
+    if fmt not in ("json", "markdown"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported export format '{format}'. Supported formats are 'json' and 'markdown'."
+        )
+
+    try:
+        if fmt == "json":
+            data = ReportExporter.export_as_json(db=db, investigation_id=investigation_id)
+            return JSONResponse(
+                content=data,
+                headers={"Content-Disposition": f'attachment; filename="{investigation_id}_audit_report.json"'}
+            )
+        else:
+            md_text = ReportExporter.export_as_markdown(db=db, investigation_id=investigation_id)
+            return Response(
+                content=md_text,
+                media_type="text/markdown; charset=utf-8",
+                headers={"Content-Disposition": f'attachment; filename="{investigation_id}_audit_report.md"'}
+            )
+    except ValueError as val_err:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(val_err)
+        )

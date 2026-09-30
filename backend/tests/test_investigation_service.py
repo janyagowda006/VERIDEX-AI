@@ -388,3 +388,55 @@ def test_create_turn_nonexistent_investigation_raises_value_error(test_db_sessio
             investigation_id="inv_nonexistent_999",
             user_question="Orphan turn question"
         )
+
+
+def test_list_investigations_search_and_filtering(test_db_session):
+    """
+    Verifies list_investigations search keyword, status, and robustness_status filtering.
+    """
+    inv1 = InvestigationService.create_investigation(test_db_session, question="Revenue by region in North")
+    inv1.status = "COMPLETED"
+    inv1.robustness_status = "STABLE"
+
+    inv2 = InvestigationService.create_investigation(test_db_session, question="Product margin sensitivity analysis")
+    inv2.status = "REQUIRES_REVIEW"
+    inv2.robustness_status = "SENSITIVE"
+
+    inv3 = InvestigationService.create_investigation(test_db_session, question="Cancellation rate breakdown")
+    inv3.status = "FAILED"
+    inv3.robustness_status = "INSUFFICIENT_EVIDENCE"
+
+    test_db_session.commit()
+
+    # 1. No filters (returns all)
+    all_invs = InvestigationService.list_investigations(test_db_session)
+    assert len(all_invs) >= 3
+
+    # 2. Keyword search
+    search_res = InvestigationService.list_investigations(test_db_session, search="North")
+    assert len(search_res) == 1
+    assert search_res[0].investigation_id == inv1.investigation_id
+
+    # 3. Status filter
+    status_res = InvestigationService.list_investigations(test_db_session, status="REQUIRES_REVIEW")
+    assert any(i.investigation_id == inv2.investigation_id for i in status_res)
+    assert not any(i.investigation_id == inv1.investigation_id for i in status_res)
+
+    # 4. Robustness status filter
+    rob_res = InvestigationService.list_investigations(test_db_session, robustness_status="SENSITIVE")
+    assert any(i.investigation_id == inv2.investigation_id for i in rob_res)
+    assert not any(i.investigation_id in (inv1.investigation_id, inv3.investigation_id) for i in rob_res)
+
+    # 5. Combined filters
+    combined_res = InvestigationService.list_investigations(
+        test_db_session,
+        search="margin",
+        status="requires_review",
+        robustness_status="sensitive"
+    )
+    assert len(combined_res) == 1
+    assert combined_res[0].investigation_id == inv2.investigation_id
+
+    # 6. Empty search result
+    empty_res = InvestigationService.list_investigations(test_db_session, search="nonexistent_keyword_xyz")
+    assert len(empty_res) == 0

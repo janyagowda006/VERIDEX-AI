@@ -204,3 +204,37 @@ def test_post_ask_invalid_investigation_id_returns_404(client):
     })
     assert res.status_code == 404
     assert "not found" in res.json()["detail"].lower()
+
+
+def test_get_investigations_search_and_filtering(client, test_db_session):
+    """
+    Verifies GET /api/investigations supports search, status, and robustness_status query parameters.
+    """
+    inv1 = InvestigationService.create_investigation(test_db_session, question="Quarterly sales performance in East")
+    inv1.status = "COMPLETED"
+    inv1.robustness_status = "STABLE"
+
+    inv2 = InvestigationService.create_investigation(test_db_session, question="Discount sensitivity analysis")
+    inv2.status = "REQUIRES_REVIEW"
+    inv2.robustness_status = "SENSITIVE"
+
+    test_db_session.commit()
+
+    # Search keyword
+    res = client.get("/api/investigations?search=Quarterly")
+    assert res.status_code == 200
+    data = res.json()
+    assert len(data) == 1
+    assert data[0]["investigation_id"] == inv1.investigation_id
+
+    # Status filter
+    res_status = client.get("/api/investigations?status=REQUIRES_REVIEW")
+    assert res_status.status_code == 200
+    data_status = res_status.json()
+    assert any(i["investigation_id"] == inv2.investigation_id for i in data_status)
+
+    # Robustness filter
+    res_rob = client.get("/api/investigations?robustness_status=STABLE")
+    assert res_rob.status_code == 200
+    data_rob = res_rob.json()
+    assert any(i["investigation_id"] == inv1.investigation_id for i in data_rob)

@@ -392,8 +392,14 @@ export function getMockInvestigationDetail(investigationId) {
 /**
  * Deterministic mock response generator for GET /api/investigations
  */
-export function getMockInvestigationsList(limit = 20, offset = 0) {
-  const items = [
+export function getMockInvestigationsList(
+  limit = 20,
+  offset = 0,
+  search = null,
+  status = null,
+  robustnessStatus = null
+) {
+  let items = [
     {
       investigation_id: "inv_mock_123456",
       question: "What is our gross revenue by region?",
@@ -448,8 +454,79 @@ export function getMockInvestigationsList(limit = 20, offset = 0) {
     }
   ];
 
+  if (search && search.trim()) {
+    const s = search.trim().toLowerCase();
+    items = items.filter(
+      (item) => item.question.toLowerCase().includes(s) || item.investigation_id.toLowerCase().includes(s)
+    );
+  }
+
+  if (status && status.trim()) {
+    const st = status.trim().toUpperCase();
+    items = items.filter((item) => (item.status || "").toUpperCase() === st);
+  }
+
+  if (robustnessStatus && robustnessStatus.trim()) {
+    const rst = robustnessStatus.trim().toUpperCase();
+    items = items.filter((item) => (item.robustness_status || "").toUpperCase() === rst);
+  }
+
   return items.slice(offset, offset + limit);
 }
+
+/**
+ * Deterministic mock response generator for GET /api/investigations/{id}/export
+ */
+export function getMockExportData(investigationId, format = 'json') {
+  const detail = getMockInvestigationDetail(investigationId);
+  const targetId = detail.investigation_id;
+
+  if (format === 'markdown') {
+    return `# VERIDEX Executive Audit Report
+**Investigation ID:** \`${targetId}\`
+**Export Timestamp:** \`${new Date().toISOString()}\`
+**Primary Question:** ${detail.question}
+**Lifecycle Status:** \`${detail.status}\` | **Robustness Status:** \`${detail.robustness_status}\`
+
+---
+
+## 🎯 Executive Recommendation
+### Prioritize Region 'North'
+Observed top performance in 'North' with gross_revenue = 1200000.0 based on verified database evidence.
+
+## 🔍 Claims & Categorized Evidence
+- **[FACT]** Database query execution returned observed factual business metrics.
+- **[DERIVED_FACT]** Deterministic arithmetic calculation derived from database facts.
+- **[INFERENCE]** Qualitative analysis of observed findings.
+
+---
+*Report generated deterministically by VERIDEX Audit Exporter.*`;
+  }
+
+  return {
+    veridex_report_version: "1.0",
+    exported_at: new Date().toISOString(),
+    investigation: {
+      investigation_id: targetId,
+      question: detail.question,
+      status: detail.status,
+      robustness_status: detail.robustness_status,
+      created_at: detail.created_at,
+      completed_at: detail.completed_at,
+      execution_time_ms: detail.execution_time_ms,
+      turns_used: detail.turns_used,
+      evidence_count: detail.evidence_count,
+      claims_count: detail.claims_count,
+      error_message: null
+    },
+    claims: MOCK_ASK_RESPONSE.claims,
+    evidence: MOCK_ASK_RESPONSE.evidence,
+    analysis: MOCK_ASK_RESPONSE.analysis,
+    turns: detail.turns || [],
+    reviews: []
+  };
+}
+
 
 /**
  * Deterministic mock response generator for GET /api/investigations/metrics/summary

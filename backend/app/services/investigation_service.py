@@ -155,18 +155,37 @@ class InvestigationService:
         cls,
         db: Session,
         limit: int = 20,
-        offset: int = 0
+        offset: int = 0,
+        search: Optional[str] = None,
+        status: Optional[str] = None,
+        robustness_status: Optional[str] = None
     ) -> List[Investigation]:
         """
-        Retrieves lightweight Investigation summary records ordered by created_at DESC.
+        Retrieves lightweight Investigation summary records ordered by created_at DESC
+        with optional search, status, and robustness_status filtering.
         """
+        query = db.query(Investigation)
+
+        if search and search.strip():
+            term = f"%{search.strip()}%"
+            query = query.filter(
+                (Investigation.question.ilike(term)) |
+                (Investigation.investigation_id.ilike(term))
+            )
+
+        if status and status.strip():
+            query = query.filter(Investigation.status == status.strip().upper())
+
+        if robustness_status and robustness_status.strip():
+            query = query.filter(Investigation.robustness_status == robustness_status.strip().upper())
+
         return (
-            db.query(Investigation)
-            .order_by(desc(Investigation.created_at))
+            query.order_by(desc(Investigation.created_at))
             .offset(offset)
             .limit(limit)
             .all()
         )
+
 
     @classmethod
     def get_investigation_by_id(

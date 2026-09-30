@@ -40,7 +40,14 @@ export async function askQuestion(question, maxTurns = 3, useMock = false) {
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`API Error (${response.status}): ${errorText}`);
+    let detail = errorText;
+    try {
+      const jsonErr = JSON.parse(errorText);
+      if (jsonErr.detail) detail = typeof jsonErr.detail === 'string' ? jsonErr.detail : JSON.stringify(jsonErr.detail);
+    } catch {
+      // fallback
+    }
+    throw new Error(detail || "Failed to execute investigation request.");
   }
 
   return await response.json();
@@ -190,7 +197,17 @@ export async function getInvestigationDetail(investigationId, useMock = false) {
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`API Error (${response.status}): ${errorText}`);
+    let detail = errorText;
+    try {
+      const jsonErr = JSON.parse(errorText);
+      if (jsonErr.detail) detail = typeof jsonErr.detail === 'string' ? jsonErr.detail : JSON.stringify(jsonErr.detail);
+    } catch {
+      // fallback
+    }
+    if (response.status === 404) {
+      throw new Error("Investigation not found.");
+    }
+    throw new Error(detail || "Failed to retrieve investigation detail.");
   }
 
   return await response.json();

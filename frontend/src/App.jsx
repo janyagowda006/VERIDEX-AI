@@ -165,11 +165,14 @@ function App() {
             {/* 4. Human-in-the-Loop Audit & Review */}
             <section className="investigation-step" aria-label="Step 4: Human-in-the-Loop Audit & Review">
               <HumanReviewPanel
+                key={data?.metadata?.investigation_id || "inv_mock_123456"}
                 investigationId={data?.metadata?.investigation_id || "inv_mock_123456"}
                 investigationStatus={
-                  data?.metadata?.robustness_status === 'SENSITIVE'
-                    ? 'REQUIRES_REVIEW'
-                    : 'COMPLETED'
+                  data?.status || (
+                    data?.metadata?.robustness_status === 'SENSITIVE' || data?.analysis?.robustness?.status === 'SENSITIVE'
+                      ? 'REQUIRES_REVIEW'
+                      : 'COMPLETED'
+                  )
                 }
                 latestReview={data?.latest_review || null}
                 reviewCount={data?.review_count || 0}
@@ -181,6 +184,7 @@ function App() {
             {data.analysis?.robustness && (
               <section className="investigation-step" aria-label="Step 5: Robustness Assessment">
                 <RobustnessCard
+                  key={data?.metadata?.investigation_id || "inv_mock_123456"}
                   robustness={data.analysis.robustness}
                   investigationId={data?.metadata?.investigation_id || "inv_mock_123456"}
                   selectedEvidenceId={selectedEvidenceId}

@@ -95,6 +95,8 @@ export function RobustnessCard({
   const [reassessResult, setReassessResult] = useState(null);
   const [reassessError, setReassessError] = useState(null);
 
+
+
   if (!robustness) return null;
 
   const { status, explanation, baseline_scenario, alternate_scenarios = [], supporting_evidence_ids = [] } = robustness;

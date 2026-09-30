@@ -19,7 +19,8 @@ export function HumanReviewPanel({
   const [currentLatestReview, setCurrentLatestReview] = useState(latestReview);
   const [currentReviewCount, setCurrentReviewCount] = useState(reviewCount);
 
-  const isCompletedOrReviewable = investigationStatus !== 'IN_PROGRESS';
+  const isCompletedOrReviewable = investigationStatus !== 'IN_PROGRESS' && investigationStatus !== 'FAILED';
+  const isFailed = investigationStatus === 'FAILED';
   const isRequiresReview = investigationStatus === 'REQUIRES_REVIEW';
 
   const handleReviewSubmit = async (e) => {
@@ -215,6 +216,11 @@ export function HumanReviewPanel({
             </button>
           </div>
         </form>
+      ) : isFailed ? (
+        <div className="review-failed-notice" role="status">
+          <span className="info-icon" aria-hidden="true">⚠️</span>
+          <span>Human review is unavailable because this investigation failed to complete.</span>
+        </div>
       ) : (
         <div className="review-in-progress-notice" role="status">
           <span className="info-icon" aria-hidden="true">ℹ️</span>

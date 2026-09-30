@@ -2,7 +2,8 @@ import {
   MOCK_ASK_RESPONSE,
   getMockReassessResponse,
   getMockReviewResponse,
-  getMockInvestigationDetail
+  getMockInvestigationDetail,
+  getMockInvestigationsList
 } from '../mocks/mockData.js';
 
 /**
@@ -208,6 +209,46 @@ export async function getInvestigationDetail(investigationId, useMock = false) {
       throw new Error("Investigation not found.");
     }
     throw new Error(detail || "Failed to retrieve investigation detail.");
+  }
+
+  return await response.json();
+}
+
+/**
+ * Retrieves a paginated list of persistent investigation summaries.
+ * Connects to GET /api/investigations
+ *
+ * @param {number} limit - Maximum number of summary items.
+ * @param {number} offset - Pagination offset.
+ * @param {boolean} useMock - Whether to return mock data.
+ * @returns {Promise<Array<Object>>} Array of InvestigationSummary objects.
+ */
+export async function listInvestigations(limit = 20, offset = 0, useMock = false) {
+  if (useMock) {
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        resolve(getMockInvestigationsList(limit, offset));
+      }, 300);
+    });
+  }
+
+  const response = await fetch(`/api/investigations?limit=${limit}&offset=${offset}`, {
+    method: 'GET',
+    headers: {
+      'Accept': 'application/json'
+    }
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    let detail = errorText;
+    try {
+      const jsonErr = JSON.parse(errorText);
+      if (jsonErr.detail) detail = typeof jsonErr.detail === 'string' ? jsonErr.detail : JSON.stringify(jsonErr.detail);
+    } catch {
+      // fallback
+    }
+    throw new Error(detail || "Failed to retrieve investigation history.");
   }
 
   return await response.json();

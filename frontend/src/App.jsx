@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { askQuestion } from './api/client.js';
+import { askQuestion, getInvestigationDetail } from './api/client.js';
 import { ThemeToggle } from './components/ThemeToggle.jsx';
 import { QuestionInput } from './components/QuestionInput.jsx';
 import { ExecutiveSummary } from './components/ExecutiveSummary.jsx';
@@ -8,6 +8,7 @@ import { EvidencePanel } from './components/EvidencePanel.jsx';
 import { DecisionCard } from './components/DecisionCard.jsx';
 import { RobustnessCard } from './components/RobustnessCard.jsx';
 import { HumanReviewPanel } from './components/HumanReviewPanel.jsx';
+import { InvestigationHistoryDrawer } from './components/InvestigationHistoryDrawer.jsx';
 import './App.css';
 
 function App() {
@@ -16,6 +17,7 @@ function App() {
   const [error, setError] = useState(null);
   const [useMock, setUseMock] = useState(true);
   const [selectedEvidenceId, setSelectedEvidenceId] = useState(null);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 
   // Theme state: respects localStorage preference, fallback to system preference
   const [theme, setTheme] = useState(() => {
@@ -69,6 +71,43 @@ function App() {
     }
   };
 
+  const handleSelectHistoricalInvestigation = async (invId) => {
+    setSelectedEvidenceId(null);
+    setLoading(true);
+    setError(null);
+
+    try {
+      const detail = await getInvestigationDetail(invId, useMock);
+      let parsedPayload = {};
+      if (detail.result_json) {
+        try {
+          parsedPayload = typeof detail.result_json === 'string' ? JSON.parse(detail.result_json) : detail.result_json;
+        } catch {
+          // fallback
+        }
+      }
+
+      const combinedData = {
+        ...parsedPayload,
+        question: detail.question || parsedPayload.question || "Historical Business Question",
+        status: detail.status,
+        latest_review: detail.latest_review,
+        review_count: detail.review_count || 0,
+        metadata: {
+          ...(parsedPayload.metadata || {}),
+          investigation_id: detail.investigation_id,
+          robustness_status: detail.robustness_status || parsedPayload?.metadata?.robustness_status || "STABLE"
+        }
+      };
+
+      setData(combinedData);
+    } catch (err) {
+      setError(err.message || "Failed to load historical investigation details.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="container">
       <header className="header" role="banner">
@@ -83,6 +122,15 @@ function App() {
             </div>
           </div>
           <div className="header-controls">
+            <button
+              type="button"
+              className="btn-history-toggle"
+              onClick={() => setIsHistoryOpen(true)}
+              aria-label="Open investigation history drawer"
+            >
+              <span className="btn-icon" aria-hidden="true">📜</span>
+              History
+            </button>
             <div className="header-badges">
               <span className="badge badge-platform">AI Build Challenge 2026</span>
               <span className={`mode-badge ${useMock ? 'mock' : 'live'}`}>
@@ -200,6 +248,13 @@ function App() {
       <footer className="footer" role="contentinfo">
         <p>VERIDEX — Traceable Evidence • Deterministic Calculations • Human Decisions</p>
       </footer>
+
+      <InvestigationHistoryDrawer
+        isOpen={isHistoryOpen}
+        onClose={() => setIsHistoryOpen(false)}
+        onSelectInvestigation={handleSelectHistoricalInvestigation}
+        useMock={useMock}
+      />
     </div>
   );
 }

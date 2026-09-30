@@ -265,3 +265,65 @@ export function getMockInvestigationDetail(investigationId) {
     review_count: 0
   };
 }
+
+/**
+ * Deterministic mock response generator for GET /api/investigations
+ */
+export function getMockInvestigationsList(limit = 20, offset = 0) {
+  const items = [
+    {
+      investigation_id: "inv_mock_123456",
+      question: "What is our gross revenue by region?",
+      status: "COMPLETED",
+      created_at: "2026-09-30T00:35:00Z",
+      completed_at: "2026-09-30T00:35:02Z",
+      execution_time_ms: 14.2,
+      turns_used: 1,
+      tool_calls_count: 1,
+      evidence_count: 3,
+      claims_count: 3,
+      robustness_status: "STABLE"
+    },
+    {
+      investigation_id: "inv_mock_789012",
+      question: "Show top 5 products by total revenue",
+      status: "REQUIRES_REVIEW",
+      created_at: "2026-09-29T18:20:00Z",
+      completed_at: "2026-09-29T18:20:03Z",
+      execution_time_ms: 18.5,
+      turns_used: 2,
+      tool_calls_count: 2,
+      evidence_count: 4,
+      claims_count: 3,
+      robustness_status: "SENSITIVE"
+    },
+    {
+      investigation_id: "inv_mock_345678",
+      question: "Compare net revenue and completed order counts across channels",
+      status: "COMPLETED",
+      created_at: "2026-09-29T14:10:00Z",
+      completed_at: "2026-09-29T14:10:01Z",
+      execution_time_ms: 12.1,
+      turns_used: 1,
+      tool_calls_count: 1,
+      evidence_count: 2,
+      claims_count: 2,
+      robustness_status: "STABLE"
+    },
+    {
+      investigation_id: "inv_mock_901234",
+      question: "Analyze cancellation and return rates by customer segment",
+      status: "FAILED",
+      created_at: "2026-09-28T11:05:00Z",
+      completed_at: "2026-09-28T11:05:02Z",
+      execution_time_ms: 22.0,
+      turns_used: 1,
+      tool_calls_count: 1,
+      evidence_count: 0,
+      claims_count: 0,
+      robustness_status: "INSUFFICIENT_EVIDENCE"
+    }
+  ];
+
+  return items.slice(offset, offset + limit);
+}

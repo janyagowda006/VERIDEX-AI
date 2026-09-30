@@ -288,7 +288,7 @@ def test_end_to_end_persistence_fidelity_with_ask_response(test_db_session):
     """
     provider = MockLLMProvider()
     question = "Which product category yields the highest gross margin?"
-    
+
     inv_rec = InvestigationService.create_investigation(
         db=test_db_session,
         question=question

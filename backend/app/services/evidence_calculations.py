@@ -1,5 +1,16 @@
+import math
 from typing import List, Dict, Any, Optional
 from app.schemas.evidence import EvidenceItem, EvidenceType, DerivedFactCalculation
+
+
+def _is_valid_finite_number(val: Any) -> bool:
+    """Validates that a value is a valid, finite real number (not None, bool, str, NaN, or inf)."""
+    if val is None or isinstance(val, bool) or not isinstance(val, (int, float)):
+        return False
+    try:
+        return math.isfinite(float(val))
+    except (ValueError, TypeError, OverflowError):
+        return False
 
 
 class EvidenceCalculator:
@@ -25,17 +36,39 @@ class EvidenceCalculator:
         input_evidence_ids: Optional[List[str]] = None
     ) -> EvidenceItem:
         """
-        Calculates percentage change from val_b to val_a: ((val_a - val_b) / val_b) * 100
+        Calculates percentage change from val_b to val_a: ((val_a - val_b) / |val_b|) * 100
+        Safely validates against non-numeric, None, bool, NaN, and +/-infinity.
         """
         ev_id = self.generate_evidence_id()
         input_ids = input_evidence_ids or []
         limitations: List[str] = []
 
-        if val_b == 0.0:
+        if not _is_valid_finite_number(val_a) or not _is_valid_finite_number(val_b):
+            limitations.append("Invalid numeric input: values must be finite numbers.")
+            calc = DerivedFactCalculation(
+                formula_name="percentage_change",
+                formula=f"(({label_a} - {label_b}) / |{label_b}|) * 100",
+                inputs={label_a: val_a, label_b: val_b},
+                output=None,
+                input_evidence_ids=input_ids
+            )
+            return EvidenceItem(
+                evidence_id=ev_id,
+                evidence_type=EvidenceType.DERIVED_FACT,
+                description=f"Percentage change between {label_a} ({val_a}) and {label_b} ({val_b}) is undefined (non-numeric or non-finite input).",
+                source=None,
+                calculation=calc,
+                limitations=limitations
+            )
+
+        f_a = float(val_a)
+        f_b = float(val_b)
+
+        if f_b == 0.0:
             limitations.append("Division by zero: baseline value B is 0. Percentage change is undefined.")
             calc = DerivedFactCalculation(
                 formula_name="percentage_change",
-                formula=f"(({label_a} - {label_b}) / {label_b}) * 100",
+                formula=f"(({label_a} - {label_b}) / |{label_b}|) * 100",
                 inputs={label_a: val_a, label_b: val_b},
                 output=None,
                 input_evidence_ids=input_ids
@@ -49,7 +82,7 @@ class EvidenceCalculator:
                 limitations=limitations
             )
 
-        pct = round(((val_a - val_b) / abs(val_b)) * 100, 2)
+        pct = round(((f_a - f_b) / abs(f_b)) * 100, 2)
         direction = "higher" if pct > 0 else "lower" if pct < 0 else "equal to"
         calc = DerivedFactCalculation(
             formula_name="percentage_change",
@@ -79,10 +112,31 @@ class EvidenceCalculator:
     ) -> EvidenceItem:
         """
         Calculates absolute difference: val_a - val_b
+        Safely validates against non-numeric, None, bool, NaN, and +/-infinity.
         """
         ev_id = self.generate_evidence_id()
         input_ids = input_evidence_ids or []
-        diff = round(val_a - val_b, 2)
+        limitations: List[str] = []
+
+        if not _is_valid_finite_number(val_a) or not _is_valid_finite_number(val_b):
+            limitations.append("Invalid numeric input: values must be finite numbers.")
+            calc = DerivedFactCalculation(
+                formula_name="difference",
+                formula=f"{label_a} - {label_b}",
+                inputs={label_a: val_a, label_b: val_b},
+                output=None,
+                input_evidence_ids=input_ids
+            )
+            return EvidenceItem(
+                evidence_id=ev_id,
+                evidence_type=EvidenceType.DERIVED_FACT,
+                description=f"Difference between {label_a} ({val_a}) and {label_b} ({val_b}) could not be computed (non-numeric or non-finite input).",
+                source=None,
+                calculation=calc,
+                limitations=limitations
+            )
+
+        diff = round(float(val_a) - float(val_b), 2)
 
         calc = DerivedFactCalculation(
             formula_name="difference",
@@ -112,12 +166,34 @@ class EvidenceCalculator:
     ) -> EvidenceItem:
         """
         Calculates ratio: val_a / val_b
+        Safely validates against non-numeric, None, bool, NaN, and +/-infinity.
         """
         ev_id = self.generate_evidence_id()
         input_ids = input_evidence_ids or []
         limitations: List[str] = []
 
-        if val_b == 0.0:
+        if not _is_valid_finite_number(val_a) or not _is_valid_finite_number(val_b):
+            limitations.append("Invalid numeric input: values must be finite numbers.")
+            calc = DerivedFactCalculation(
+                formula_name="ratio",
+                formula=f"{label_a} / {label_b}",
+                inputs={label_a: val_a, label_b: val_b},
+                output=None,
+                input_evidence_ids=input_ids
+            )
+            return EvidenceItem(
+                evidence_id=ev_id,
+                evidence_type=EvidenceType.DERIVED_FACT,
+                description=f"Ratio of {label_a} ({val_a}) to {label_b} ({val_b}) is undefined (non-numeric or non-finite input).",
+                source=None,
+                calculation=calc,
+                limitations=limitations
+            )
+
+        f_a = float(val_a)
+        f_b = float(val_b)
+
+        if f_b == 0.0:
             limitations.append("Division by zero: denominator is 0. Ratio is undefined.")
             calc = DerivedFactCalculation(
                 formula_name="ratio",
@@ -135,7 +211,7 @@ class EvidenceCalculator:
                 limitations=limitations
             )
 
-        res = round(val_a / val_b, 4)
+        res = round(f_a / f_b, 4)
         calc = DerivedFactCalculation(
             formula_name="ratio",
             formula=f"{label_a} / {label_b}",
@@ -164,12 +240,34 @@ class EvidenceCalculator:
     ) -> EvidenceItem:
         """
         Calculates percentage share of total: (part / total) * 100
+        Safely validates against non-numeric, None, bool, NaN, and +/-infinity.
         """
         ev_id = self.generate_evidence_id()
         input_ids = input_evidence_ids or []
         limitations: List[str] = []
 
-        if total == 0.0:
+        if not _is_valid_finite_number(part) or not _is_valid_finite_number(total):
+            limitations.append("Invalid numeric input: values must be finite numbers.")
+            calc = DerivedFactCalculation(
+                formula_name="share_of_total",
+                formula=f"({part_label} / {total_label}) * 100",
+                inputs={part_label: part, total_label: total},
+                output=None,
+                input_evidence_ids=input_ids
+            )
+            return EvidenceItem(
+                evidence_id=ev_id,
+                evidence_type=EvidenceType.DERIVED_FACT,
+                description=f"Share of {part_label} ({part}) out of {total_label} ({total}) is undefined (non-numeric or non-finite input).",
+                source=None,
+                calculation=calc,
+                limitations=limitations
+            )
+
+        f_part = float(part)
+        f_total = float(total)
+
+        if f_total == 0.0:
             limitations.append("Division by zero: total value is 0. Share of total is undefined.")
             calc = DerivedFactCalculation(
                 formula_name="share_of_total",
@@ -187,7 +285,7 @@ class EvidenceCalculator:
                 limitations=limitations
             )
 
-        share = round((part / total) * 100, 2)
+        share = round((f_part / f_total) * 100, 2)
         calc = DerivedFactCalculation(
             formula_name="share_of_total",
             formula=f"({part_label} / {total_label}) * 100",
@@ -218,12 +316,34 @@ class EvidenceCalculator:
         Calculates deterministic growth rate from previous to current:
         ((current - previous) / previous) * 100
         Handles previous == 0 safely with output=None and explicit limitation.
+        Safely validates against non-numeric, None, bool, NaN, and +/-infinity.
         """
         ev_id = self.generate_evidence_id()
         input_ids = input_evidence_ids or []
         limitations: List[str] = []
 
-        if previous == 0.0:
+        if not _is_valid_finite_number(current) or not _is_valid_finite_number(previous):
+            limitations.append("Invalid numeric input: values must be finite numbers.")
+            calc = DerivedFactCalculation(
+                formula_name="growth_rate",
+                formula=f"(({current_label} - {previous_label}) / {previous_label}) * 100",
+                inputs={current_label: current, previous_label: previous},
+                output=None,
+                input_evidence_ids=input_ids
+            )
+            return EvidenceItem(
+                evidence_id=ev_id,
+                evidence_type=EvidenceType.DERIVED_FACT,
+                description=f"Growth rate from {previous_label} ({previous}) to {current_label} ({current}) is undefined (non-numeric or non-finite input).",
+                source=None,
+                calculation=calc,
+                limitations=limitations
+            )
+
+        f_curr = float(current)
+        f_prev = float(previous)
+
+        if f_prev == 0.0:
             limitations.append("Division by zero: previous baseline value is 0. Growth rate is undefined.")
             calc = DerivedFactCalculation(
                 formula_name="growth_rate",
@@ -241,7 +361,7 @@ class EvidenceCalculator:
                 limitations=limitations
             )
 
-        rate = round(((current - previous) / previous) * 100, 2)
+        rate = round(((f_curr - f_prev) / f_prev) * 100, 2)
         direction = "positive growth" if rate > 0 else "negative growth" if rate < 0 else "zero growth"
         calc = DerivedFactCalculation(
             formula_name="growth_rate",
@@ -272,12 +392,34 @@ class EvidenceCalculator:
         """
         Calculates profit margin percentage: ((revenue - cost) / revenue) * 100
         Handles revenue == 0 safely with output=None and explicit limitation.
+        Safely validates against non-numeric, None, bool, NaN, and +/-infinity.
         """
         ev_id = self.generate_evidence_id()
         input_ids = input_evidence_ids or []
         limitations: List[str] = []
 
-        if revenue == 0.0:
+        if not _is_valid_finite_number(revenue) or not _is_valid_finite_number(cost):
+            limitations.append("Invalid numeric input: values must be finite numbers.")
+            calc = DerivedFactCalculation(
+                formula_name="margin_percent",
+                formula=f"(({revenue_label} - {cost_label}) / {revenue_label}) * 100",
+                inputs={revenue_label: revenue, cost_label: cost},
+                output=None,
+                input_evidence_ids=input_ids
+            )
+            return EvidenceItem(
+                evidence_id=ev_id,
+                evidence_type=EvidenceType.DERIVED_FACT,
+                description=f"Margin percentage for {revenue_label} ({revenue}) and {cost_label} ({cost}) is undefined (non-numeric or non-finite input).",
+                source=None,
+                calculation=calc,
+                limitations=limitations
+            )
+
+        f_rev = float(revenue)
+        f_cost = float(cost)
+
+        if f_rev == 0.0:
             limitations.append("Division by zero: revenue is 0. Margin percentage is undefined.")
             calc = DerivedFactCalculation(
                 formula_name="margin_percent",
@@ -295,7 +437,7 @@ class EvidenceCalculator:
                 limitations=limitations
             )
 
-        margin = round(((revenue - cost) / revenue) * 100, 2)
+        margin = round(((f_rev - f_cost) / f_rev) * 100, 2)
         calc = DerivedFactCalculation(
             formula_name="margin_percent",
             formula=f"(({revenue_label} - {cost_label}) / {revenue_label}) * 100",
@@ -323,7 +465,7 @@ class EvidenceCalculator:
         """
         Calculates deterministic statistical summary: count, min, max, mean, median, and IQR (Q3 - Q1).
         Uses standard Tukey's method for deterministic quartiles without external library dependencies.
-        Validates input against empty or non-numeric entries explicitly.
+        Validates input against empty or non-numeric/non-finite entries explicitly.
         """
         ev_id = self.generate_evidence_id()
         input_ids = input_evidence_ids or []
@@ -347,10 +489,10 @@ class EvidenceCalculator:
                 limitations=limitations
             )
 
-        # Explicit validation: detect None, boolean (subclass of int in Python), or non-numeric types
-        invalid_entries = [v for v in values if v is None or isinstance(v, bool) or not isinstance(v, (int, float))]
+        # Explicit validation: detect None, boolean (subclass of int in Python), non-numeric, NaN, +/-inf
+        invalid_entries = [v for v in values if not _is_valid_finite_number(v)]
         if invalid_entries:
-            limitations.append(f"Invalid non-numeric values detected in input: {invalid_entries[:5]}. Statistical summary cannot be calculated.")
+            limitations.append(f"Invalid non-numeric or non-finite values detected in input: {invalid_entries[:5]}. Statistical summary cannot be calculated.")
             calc = DerivedFactCalculation(
                 formula_name="statistical_summary",
                 formula="count, min, max, mean, median, IQR (Q3 - Q1)",
@@ -361,7 +503,7 @@ class EvidenceCalculator:
             return EvidenceItem(
                 evidence_id=ev_id,
                 evidence_type=EvidenceType.DERIVED_FACT,
-                description=f"Statistical summary for {metric_label} could not be computed due to non-numeric input.",
+                description=f"Statistical summary for {metric_label} could not be computed due to non-numeric or non-finite input.",
                 source=None,
                 calculation=calc,
                 limitations=limitations
@@ -453,10 +595,10 @@ class EvidenceCalculator:
         input_ids = input_evidence_ids or []
         limitations: List[str] = []
 
-        # Validate inputs are numeric
+        # Validate inputs are valid finite numeric values
         cleaned_inputs: Dict[str, float] = {}
         for k, v in inputs.items():
-            if v is None or isinstance(v, bool) or not isinstance(v, (int, float)):
+            if not _is_valid_finite_number(v):
                 limitations.append(f"Input '{k}' has invalid non-numeric value: {v}.")
             else:
                 cleaned_inputs[k] = float(v)

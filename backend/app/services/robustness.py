@@ -118,7 +118,7 @@ class RobustnessEngine:
 
         # Build baseline summary
         first_row = query_data[0]
-        key_col = next((c for c in ["region", "product_name", "customer_name", "category"] if c in first_row), list(first_row.keys())[0])
+        key_col = next((c for c in ["candidate_id", "candidate", "name", "id", "region", "product_name", "customer_name", "category"] if c in first_row), list(first_row.keys())[0])
         baseline_top = first_row.get(key_col)
 
         baseline_scenario = RobustnessScenario(
@@ -343,7 +343,7 @@ class RobustnessEngine:
                 supporting_evidence_ids=fact_ids
             )
 
-        eff_key = key_col or next((c for c in ["region", "product_name", "customer_name", "category"] if c in first_row), list(first_row.keys())[0])
+        eff_key = key_col or next((c for c in ["candidate_id", "candidate", "name", "id", "region", "product_name", "customer_name", "category"] if c in first_row), list(first_row.keys())[0])
 
         if metric_col:
             eff_metric = metric_col

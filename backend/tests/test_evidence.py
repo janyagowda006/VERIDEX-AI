@@ -594,3 +594,139 @@ def test_new_derived_evidence_provenance_preservation():
         assert len(item.calculation.input_evidence_ids) > 0
         assert item.calculation.formula_name != ""
         assert item.calculation.formula != ""
+
+
+def test_percentage_change_edge_cases_nan_inf_none_bool():
+    calc = EvidenceCalculator()
+    # None input
+    res_none = calc.percentage_change(None, 100.0)
+    assert res_none.calculation.output is None
+    assert any("finite numbers" in lim.lower() for lim in res_none.limitations)
+
+    # NaN input
+    res_nan = calc.percentage_change(100.0, float('nan'))
+    assert res_nan.calculation.output is None
+    assert any("finite numbers" in lim.lower() for lim in res_nan.limitations)
+
+    # Infinity input
+    res_inf = calc.percentage_change(float('inf'), 100.0)
+    assert res_inf.calculation.output is None
+    assert any("finite numbers" in lim.lower() for lim in res_inf.limitations)
+
+    # Boolean input (guard against bool subclassing int)
+    res_bool = calc.percentage_change(True, 100.0)
+    assert res_bool.calculation.output is None
+    assert any("finite numbers" in lim.lower() for lim in res_bool.limitations)
+
+    # Negative baseline value
+    res_neg = calc.percentage_change(-80.0, -100.0)
+    assert res_neg.calculation.output == 20.0
+    assert len(res_neg.limitations) == 0
+
+
+def test_difference_edge_cases_nan_inf_none_bool():
+    calc = EvidenceCalculator()
+    # None and NaN
+    assert calc.difference(None, 10.0).calculation.output is None
+    assert calc.difference(10.0, float('nan')).calculation.output is None
+    assert calc.difference(float('-inf'), 10.0).calculation.output is None
+    assert calc.difference(False, 10.0).calculation.output is None
+
+    # Valid negative values
+    res = calc.difference(-50.0, -30.0)
+    assert res.calculation.output == -20.0
+    assert len(res.limitations) == 0
+
+
+def test_ratio_edge_cases_nan_inf_none_bool():
+    calc = EvidenceCalculator()
+    assert calc.ratio(None, 10.0).calculation.output is None
+    assert calc.ratio(10.0, float('nan')).calculation.output is None
+    assert calc.ratio(float('inf'), 10.0).calculation.output is None
+    assert calc.ratio(True, 10.0).calculation.output is None
+
+    # Division by zero
+    res_zero = calc.ratio(50.0, 0.0)
+    assert res_zero.calculation.output is None
+    assert any("division by zero" in lim.lower() for lim in res_zero.limitations)
+
+
+def test_share_of_total_edge_cases_nan_inf_none_bool():
+    calc = EvidenceCalculator()
+    assert calc.share_of_total(None, 100.0).calculation.output is None
+    assert calc.share_of_total(10.0, float('nan')).calculation.output is None
+    assert calc.share_of_total(float('inf'), 100.0).calculation.output is None
+    assert calc.share_of_total(True, 100.0).calculation.output is None
+
+    # Division by zero
+    res_zero = calc.share_of_total(25.0, 0.0)
+    assert res_zero.calculation.output is None
+    assert any("division by zero" in lim.lower() for lim in res_zero.limitations)
+
+
+def test_growth_rate_edge_cases_nan_inf_none_bool():
+    calc = EvidenceCalculator()
+    assert calc.growth_rate(None, 100.0).calculation.output is None
+    assert calc.growth_rate(100.0, float('nan')).calculation.output is None
+    assert calc.growth_rate(float('inf'), 100.0).calculation.output is None
+    assert calc.growth_rate(True, 100.0).calculation.output is None
+
+    # Zero baseline
+    res_zero = calc.growth_rate(100.0, 0.0)
+    assert res_zero.calculation.output is None
+    assert any("division by zero" in lim.lower() for lim in res_zero.limitations)
+
+
+def test_margin_percent_edge_cases_nan_inf_none_bool():
+    calc = EvidenceCalculator()
+    assert calc.margin_percent(None, 50.0).calculation.output is None
+    assert calc.margin_percent(100.0, float('nan')).calculation.output is None
+    assert calc.margin_percent(float('inf'), 50.0).calculation.output is None
+    assert calc.margin_percent(True, 50.0).calculation.output is None
+
+    # Zero revenue
+    res_zero = calc.margin_percent(0.0, 50.0)
+    assert res_zero.calculation.output is None
+    assert any("division by zero" in lim.lower() for lim in res_zero.limitations)
+
+
+def test_statistical_summary_nan_inf_guards():
+    calc = EvidenceCalculator()
+    # NaN in dataset
+    res_nan = calc.statistical_summary([10.0, float('nan'), 20.0], "WithNaN")
+    assert res_nan.calculation.output is None
+    assert any("non-finite" in lim.lower() or "non-numeric" in lim.lower() for lim in res_nan.limitations)
+
+    # +inf in dataset
+    res_inf = calc.statistical_summary([10.0, float('inf'), 20.0], "WithInf")
+    assert res_inf.calculation.output is None
+    assert any("non-finite" in lim.lower() or "non-numeric" in lim.lower() for lim in res_inf.limitations)
+
+    # -inf in dataset
+    res_ninf = calc.statistical_summary([10.0, float('-inf'), 20.0], "WithNegInf")
+    assert res_ninf.calculation.output is None
+    assert any("non-finite" in lim.lower() or "non-numeric" in lim.lower() for lim in res_ninf.limitations)
+
+    # Deterministic repeated execution
+    data = [15.0, 25.0, 35.0, 45.0]
+    run1 = calc.statistical_summary(data, "RunMetric")
+    run2 = calc.statistical_summary(data, "RunMetric")
+    assert run1.calculation.output == run2.calculation.output
+
+
+def test_compound_metric_nan_inf_guards():
+    calc = EvidenceCalculator()
+    # NaN input
+    res_nan = calc.compound_metric("test_nan", "a - b", {"a": float('nan'), "b": 10.0})
+    assert res_nan.calculation.output is None
+    assert any("invalid" in lim.lower() for lim in res_nan.limitations)
+
+    # Infinity input
+    res_inf = calc.compound_metric("test_inf", "a - b", {"a": 100.0, "b": float('inf')})
+    assert res_inf.calculation.output is None
+    assert any("invalid" in lim.lower() for lim in res_inf.limitations)
+
+    # Boolean input
+    res_bool = calc.compound_metric("test_bool", "a + b", {"a": True, "b": 10.0})
+    assert res_bool.calculation.output is None
+    assert any("invalid" in lim.lower() for lim in res_bool.limitations)

@@ -680,3 +680,664 @@ def test_robustness_multi_scenario_deterministic_repeated_execution():
         assert s1.scenario_name == s2.scenario_name
         assert s1.is_recommendation_changed == s2.is_recommendation_changed
         assert s1.result_summary == s2.result_summary
+
+
+# ===========================================================================
+# Phase 7C: Multi-Criteria Decision Evaluation Tests
+# ===========================================================================
+
+def test_multi_criteria_single_criterion_scoring():
+    """
+    1. Single criterion scoring:
+    Verifies that evaluating a single criterion correctly normalizes candidate scores
+    and assigns ranks deterministically.
+    """
+    engine = DecisionEngine()
+    candidates = [
+        {"region": "North", "revenue": 1000.0},
+        {"region": "South", "revenue": 2000.0}
+    ]
+    criteria = [{"name": "Revenue Max", "metric": "revenue", "direction": "maximize"}]
+
+    rankings = engine.rank_candidates_multi_criteria(candidates, criteria, key_col="region")
+
+    assert len(rankings) == 2
+    assert rankings[0]["region"] == "South"
+    assert rankings[0]["rank"] == 1
+    assert rankings[0]["score"] == 1.0
+    assert rankings[1]["region"] == "North"
+    assert rankings[1]["rank"] == 2
+    assert rankings[1]["score"] == 0.0
+
+
+def test_multi_criteria_multiple_criteria():
+    """
+    2. Multiple criteria evaluation:
+    Verifies evaluation across multiple heterogeneous criteria (maximize, minimize, threshold)
+    with transparent criterion contributions and satisfied/failed criteria tracking.
+    """
+    engine = DecisionEngine()
+    candidates = [
+        {"region": "Alpha", "revenue": 2000.0, "cost": 100.0, "margin": 25.0},
+        {"region": "Beta", "revenue": 1000.0, "cost": 300.0, "margin": 15.0}
+    ]
+    criteria = [
+        {"name": "Rev", "metric": "revenue", "direction": "maximize", "weight": 1.0},
+        {"name": "Cost", "metric": "cost", "direction": "minimize", "weight": 1.0},
+        {"name": "Margin", "metric": "margin", "operator": ">=", "threshold_value": 20.0, "weight": 1.0}
+    ]
+
+    analysis = engine.evaluate_multi_criteria(candidates, criteria, key_col="region")
+
+    assert len(analysis.rankings) == 2
+    top = analysis.rankings[0]
+    assert top["region"] == "Alpha"
+    assert top["score"] == 1.0
+    assert "Rev" in top["criteria_satisfied"]
+    assert "Cost" in top["criteria_satisfied"]
+    assert "Margin" in top["criteria_satisfied"]
+
+    bottom = analysis.rankings[1]
+    assert bottom["region"] == "Beta"
+    assert bottom["score"] == 0.0
+    assert "Rev" in bottom["criteria_failed"]
+    assert "Cost" in bottom["criteria_failed"]
+    assert "Margin" in bottom["criteria_failed"]
+
+
+def test_multi_criteria_weighted_scoring():
+    """
+    3. Weighted scoring:
+    Verifies exact mathematical contribution of distinct criterion weights.
+    Weights: C1=0.75, C2=0.25.
+    Candidate X meets C1 (1.0) and fails C2 (0.0) -> Score = 0.7500.
+    Candidate Y fails C1 (0.0) and meets C2 (1.0) -> Score = 0.2500.
+    """
+    engine = DecisionEngine()
+    candidates = [
+        {"id": "X", "m1": 20.0, "m2": 5.0},
+        {"id": "Y", "m1": 5.0, "m2": 20.0}
+    ]
+    criteria = [
+        {"name": "C1", "metric": "m1", "operator": ">=", "threshold_value": 10.0, "weight": 0.75},
+        {"name": "C2", "metric": "m2", "operator": ">=", "threshold_value": 10.0, "weight": 0.25}
+    ]
+
+    rankings = engine.rank_candidates_multi_criteria(candidates, criteria, key_col="id")
+
+    assert len(rankings) == 2
+    assert rankings[0]["candidate_id"] == "X"
+    assert rankings[0]["score"] == 0.75
+    assert rankings[0]["criterion_contributions"]["C1"] == 0.75
+    assert rankings[0]["criterion_contributions"]["C2"] == 0.0
+
+    assert rankings[1]["candidate_id"] == "Y"
+    assert rankings[1]["score"] == 0.25
+    assert rankings[1]["criterion_contributions"]["C1"] == 0.0
+    assert rankings[1]["criterion_contributions"]["C2"] == 0.25
+
+
+def test_multi_criteria_weight_normalization():
+    """
+    4. Weight normalization:
+    When weights do not sum to 1.0 (e.g. 6.0 and 2.0, sum=8.0), they are normalized
+    deterministically to: 6/8 = 0.75 and 2/8 = 0.25.
+    """
+    engine = DecisionEngine()
+    criteria = [
+        {"name": "C1", "metric": "m1", "operator": ">=", "threshold_value": 10.0, "weight": 6.0},
+        {"name": "C2", "metric": "m2", "operator": ">=", "threshold_value": 10.0, "weight": 2.0}
+    ]
+
+    is_valid, err_msg, norm_weights = engine.validate_weights(criteria)
+    assert is_valid is True
+    assert err_msg is None
+    assert norm_weights["C1"] == 0.75
+    assert norm_weights["C2"] == 0.25
+
+    candidates = [{"id": "Cand1", "m1": 15.0, "m2": 0.0}]
+    rankings = engine.rank_candidates_multi_criteria(candidates, criteria, key_col="id")
+    assert rankings[0]["score"] == 0.75
+
+
+def test_multi_criteria_invalid_negative_weight():
+    """
+    5. Invalid negative weight:
+    Reject negative weights with validation error and INSUFFICIENT_EVIDENCE.
+    """
+    engine = DecisionEngine()
+    criteria = [{"name": "C1", "metric": "m1", "weight": -2.0}]
+    candidates = [{"id": "A", "m1": 10.0}]
+
+    is_valid, err_msg, _ = engine.validate_weights(criteria)
+    assert is_valid is False
+    assert "negative" in err_msg.lower()
+
+    analysis = engine.evaluate_multi_criteria(candidates, criteria)
+    assert analysis.recommendation.robustness_status == "INSUFFICIENT_EVIDENCE"
+    assert len(analysis.rankings) == 0
+
+
+def test_multi_criteria_nan_weight():
+    """
+    6. NaN weight:
+    Reject NaN weights deterministically.
+    """
+    engine = DecisionEngine()
+    criteria = [{"name": "C1", "metric": "m1", "weight": float('nan')}]
+    candidates = [{"id": "A", "m1": 10.0}]
+
+    is_valid, err_msg, _ = engine.validate_weights(criteria)
+    assert is_valid is False
+    assert "non-finite" in err_msg.lower()
+
+    analysis = engine.evaluate_multi_criteria(candidates, criteria)
+    assert analysis.recommendation.robustness_status == "INSUFFICIENT_EVIDENCE"
+
+
+def test_multi_criteria_infinite_weight():
+    """
+    7. Infinite weight (+inf and -inf):
+    Reject infinite weights deterministically.
+    """
+    engine = DecisionEngine()
+    candidates = [{"id": "A", "m1": 10.0}]
+
+    for inf_w in [float('inf'), float('-inf')]:
+        criteria = [{"name": "C1", "metric": "m1", "weight": inf_w}]
+        is_valid, err_msg, _ = engine.validate_weights(criteria)
+        assert is_valid is False
+        assert "non-finite" in err_msg.lower() or "negative" in err_msg.lower()
+
+        analysis = engine.evaluate_multi_criteria(candidates, criteria)
+        assert analysis.recommendation.robustness_status == "INSUFFICIENT_EVIDENCE"
+
+
+def test_multi_criteria_zero_total_weight():
+    """
+    8. Zero total weight:
+    When weights sum to 0.0, avoid division by zero and return INSUFFICIENT_EVIDENCE.
+    """
+    engine = DecisionEngine()
+    criteria = [
+        {"name": "C1", "metric": "m1", "weight": 0.0},
+        {"name": "C2", "metric": "m2", "weight": 0.0}
+    ]
+    candidates = [{"id": "A", "m1": 10.0, "m2": 20.0}]
+
+    is_valid, err_msg, _ = engine.validate_weights(criteria)
+    assert is_valid is False
+    assert "zero" in err_msg.lower()
+
+    analysis = engine.evaluate_multi_criteria(candidates, criteria)
+    assert analysis.recommendation.robustness_status == "INSUFFICIENT_EVIDENCE"
+    assert "Total weight is zero" in analysis.recommendation.rationale
+
+
+def test_multi_criteria_maximize_direction():
+    """
+    9. Maximize criterion:
+    Verifies that higher values yield higher normalized scores across candidate pool.
+    Revenues: 100, 200, 300 -> Normalized scores: 0.0, 0.5, 1.0.
+    """
+    engine = DecisionEngine()
+    candidates = [
+        {"item": "Low", "revenue": 100.0},
+        {"item": "Mid", "revenue": 200.0},
+        {"item": "High", "revenue": 300.0}
+    ]
+    criteria = [{"name": "Rev", "metric": "revenue", "direction": "maximize"}]
+
+    rankings = engine.rank_candidates_multi_criteria(candidates, criteria, key_col="item")
+
+    assert rankings[0]["item"] == "High"
+    assert rankings[0]["score"] == 1.0
+    assert rankings[1]["item"] == "Mid"
+    assert rankings[1]["score"] == 0.5
+    assert rankings[2]["item"] == "Low"
+    assert rankings[2]["score"] == 0.0
+
+
+def test_multi_criteria_minimize_direction():
+    """
+    10. Minimize criterion:
+    Verifies that lower values yield higher normalized scores across candidate pool.
+    Defect rates: 1.0, 3.0, 5.0 -> Normalized scores: 1.0 (lowest defects), 0.5, 0.0 (highest defects).
+    """
+    engine = DecisionEngine()
+    candidates = [
+        {"item": "BestQuality", "defect_rate": 1.0},
+        {"item": "MidQuality", "defect_rate": 3.0},
+        {"item": "WorstQuality", "defect_rate": 5.0}
+    ]
+    criteria = [{"name": "Defects", "metric": "defect_rate", "direction": "minimize"}]
+
+    rankings = engine.rank_candidates_multi_criteria(candidates, criteria, key_col="item")
+
+    assert rankings[0]["item"] == "BestQuality"
+    assert rankings[0]["score"] == 1.0
+    assert rankings[1]["item"] == "MidQuality"
+    assert rankings[1]["score"] == 0.5
+    assert rankings[2]["item"] == "WorstQuality"
+    assert rankings[2]["score"] == 0.0
+
+
+def test_multi_criteria_threshold_criterion():
+    """
+    11. Threshold criterion:
+    Evaluates boolean satisfaction where meeting threshold yields 1.0 and failing yields 0.0.
+    """
+    engine = DecisionEngine()
+    candidates = [
+        {"region": "Pass", "score_val": 85.0},
+        {"region": "Fail", "score_val": 45.0}
+    ]
+    criteria = [{"name": "PassingScore", "metric": "score_val", "operator": ">=", "threshold_value": 70.0}]
+
+    rankings = engine.rank_candidates_multi_criteria(candidates, criteria, key_col="region")
+
+    assert rankings[0]["region"] == "Pass"
+    assert rankings[0]["score"] == 1.0
+    assert rankings[1]["region"] == "Fail"
+    assert rankings[1]["score"] == 0.0
+
+
+def test_multi_criteria_ranking_multiple_candidates():
+    """
+    12. Ranking multiple candidates:
+    Verifies strictly descending score order across 5 distinct candidates.
+    """
+    engine = DecisionEngine()
+    candidates = [{"id": f"P{i}", "rev": i * 10.0} for i in range(1, 6)]
+    criteria = [{"name": "Rev", "metric": "rev", "direction": "maximize"}]
+
+    rankings = engine.rank_candidates_multi_criteria(candidates, criteria, key_col="id")
+
+    assert len(rankings) == 5
+    assert [r["rank"] for r in rankings] == [1, 2, 3, 4, 5]
+    assert rankings[0]["id"] == "P5"
+    assert rankings[4]["id"] == "P1"
+    scores = [r["score"] for r in rankings]
+    assert scores == sorted(scores, reverse=True)
+
+
+def test_multi_criteria_deterministic_tie_handling():
+    """
+    13. Deterministic tie handling:
+    When two candidates have identical scores, the tie is broken deterministically
+    by candidate identifier string ascending (e.g., 'Alpha' precedes 'Beta').
+    """
+    engine = DecisionEngine()
+    candidates = [
+        {"name": "Beta", "metric_val": 100.0},
+        {"name": "Alpha", "metric_val": 100.0}
+    ]
+    criteria = [{"name": "Crit", "metric": "metric_val", "operator": "==", "threshold_value": 100.0}]
+
+    rankings = engine.rank_candidates_multi_criteria(candidates, criteria, key_col="name")
+
+    assert len(rankings) == 2
+    assert rankings[0]["score"] == 1.0
+    assert rankings[1]["score"] == 1.0
+    # 'Alpha' precedes 'Beta' lexicographically
+    assert rankings[0]["name"] == "Alpha"
+    assert rankings[0]["rank"] == 1
+    assert rankings[1]["name"] == "Beta"
+    assert rankings[1]["rank"] == 2
+
+
+def test_multi_criteria_missing_metric():
+    """
+    14. Missing candidate metric:
+    When a candidate lacks a metric key, it receives 0.0 score for that criterion without crashing,
+    and the criterion is recorded in criteria_failed.
+    """
+    engine = DecisionEngine()
+    candidates = [
+        {"id": "Complete", "rev": 100.0, "cost": 50.0},
+        {"id": "Incomplete", "rev": 100.0}  # missing 'cost'
+    ]
+    criteria = [
+        {"name": "Rev", "metric": "rev", "operator": ">=", "threshold_value": 50.0, "weight": 0.5},
+        {"name": "Cost", "metric": "cost", "operator": "<=", "threshold_value": 100.0, "weight": 0.5}
+    ]
+
+    rankings = engine.rank_candidates_multi_criteria(candidates, criteria, key_col="id")
+
+    assert rankings[0]["id"] == "Complete"
+    assert rankings[0]["score"] == 1.0
+
+    incomplete_rec = next(r for r in rankings if r["id"] == "Incomplete")
+    assert incomplete_rec["score"] == 0.5
+    assert "Cost" in incomplete_rec["criteria_failed"]
+    assert "Rev" in incomplete_rec["criteria_satisfied"]
+
+
+def test_multi_criteria_invalid_metric():
+    """
+    15. Invalid metric handling:
+    Candidates with string, NaN, or non-numeric values for numeric criteria
+    are handled safely with 0.0 score and flagged in criteria_failed.
+    """
+    engine = DecisionEngine()
+    candidates = [
+        {"id": "Valid", "rev": 100.0},
+        {"id": "CorruptedString", "rev": "corrupted_text"},
+        {"id": "CorruptedNaN", "rev": float('nan')}
+    ]
+    criteria = [{"name": "Rev", "metric": "rev", "direction": "maximize"}]
+
+    rankings = engine.rank_candidates_multi_criteria(candidates, criteria, key_col="id")
+
+    valid_rec = next(r for r in rankings if r["id"] == "Valid")
+    assert valid_rec["score"] == 1.0
+
+    nan_rec = next(r for r in rankings if r["id"] == "CorruptedNaN")
+    assert nan_rec["score"] == 0.0
+    assert "Rev" in nan_rec["criteria_failed"]
+
+    str_rec = next(r for r in rankings if r["id"] == "CorruptedString")
+    assert str_rec["score"] == 0.0
+    assert "Rev" in str_rec["criteria_failed"]
+
+
+def test_multi_criteria_duplicate_candidate_handling():
+    """
+    16. Duplicate candidate handling:
+    Two records with the same candidate identifier are both ranked deterministically
+    without losing either entry.
+    """
+    engine = DecisionEngine()
+    candidates = [
+        {"region": "North", "sales": 500.0},
+        {"region": "North", "sales": 1000.0}
+    ]
+    criteria = [{"name": "SalesMax", "metric": "sales", "direction": "maximize"}]
+
+    rankings = engine.rank_candidates_multi_criteria(candidates, criteria, key_col="region")
+
+    assert len(rankings) == 2
+    assert rankings[0]["region"] == "North"
+    assert rankings[0]["score"] == 1.0
+    assert rankings[0]["rank"] == 1
+    assert rankings[1]["region"] == "North"
+    assert rankings[1]["score"] == 0.0
+    assert rankings[1]["rank"] == 2
+
+
+def test_multi_criteria_deterministic_repeated_execution():
+    """
+    17. Deterministic repeated execution:
+    Running multi-criteria evaluation multiple times on the same input yields
+    identical numerical scores, contributions, and rankings.
+    """
+    engine = DecisionEngine()
+    candidates = [
+        {"id": "A", "val1": 10.0, "val2": 50.0},
+        {"id": "B", "val1": 20.0, "val2": 30.0},
+        {"id": "C", "val1": 15.0, "val2": 40.0}
+    ]
+    criteria = [
+        {"name": "V1", "metric": "val1", "direction": "maximize", "weight": 2.0},
+        {"name": "V2", "metric": "val2", "direction": "minimize", "weight": 1.0}
+    ]
+
+    run1 = engine.evaluate_multi_criteria(candidates, criteria, key_col="id")
+    run2 = engine.evaluate_multi_criteria(candidates, criteria, key_col="id")
+
+    assert len(run1.rankings) == len(run2.rankings)
+    for r1, r2 in zip(run1.rankings, run2.rankings):
+        assert r1["id"] == r2["id"]
+        assert r1["rank"] == r2["rank"]
+        assert r1["score"] == r2["score"]
+        assert r1["criterion_contributions"] == r2["criterion_contributions"]
+
+
+def test_multi_criteria_evidence_provenance():
+    """
+    18. Evidence provenance:
+    Verifies that FACT evidence IDs are correctly preserved and linked to recommendation
+    and decision analysis outputs.
+    """
+    engine = DecisionEngine()
+    ev_fact = EvidenceItem(evidence_id="ev_fact_99", evidence_type=EvidenceType.FACT, description="Fact sales")
+    ev_derived = EvidenceItem(evidence_id="ev_derived_99", evidence_type=EvidenceType.DERIVED_FACT, description="Derived")
+    candidates = [{"region": "North", "rev": 100.0}]
+    criteria = [{"name": "Rev", "metric": "rev", "direction": "maximize"}]
+
+    analysis = engine.evaluate_multi_criteria(
+        candidates,
+        criteria,
+        evidence_items=[ev_fact, ev_derived],
+        key_col="region"
+    )
+
+    assert "ev_fact_99" in analysis.recommendation.supporting_evidence_ids
+    assert "ev_derived_99" not in analysis.recommendation.supporting_evidence_ids
+
+
+def test_multi_criteria_backward_compatibility_existing_decision_analysis():
+    """
+    19. Backward compatibility with existing decision analysis:
+    Calling analyze_decision() without criteria parameters produces the exact
+    single-metric analysis and recommendation format expected by Phase 6 / 7A / 7B.
+    """
+    engine = DecisionEngine()
+    ev_fact = EvidenceItem(evidence_id="ev_fact_1", evidence_type=EvidenceType.FACT, description="Sales data")
+    query_data = [{"region": "North", "revenue": 1200.0}, {"region": "South", "revenue": 800.0}]
+
+    analysis = engine.analyze_decision(
+        question="Which region had highest revenue?",
+        evidence_items=[ev_fact],
+        query_data=query_data
+    )
+
+    assert analysis.analysis_id is not None
+    assert len(analysis.rankings) == 2
+    assert analysis.rankings[0]["region"] == "North"
+    assert len(analysis.criteria_evaluated) == 1
+    assert "ev_fact_1" in analysis.recommendation.supporting_evidence_ids
+    assert "Prioritize Region 'North'" in analysis.recommendation.action_title
+
+
+def test_multi_criteria_interaction_with_robustness_output():
+    """
+    20. Interaction with robustness output:
+    Verifies that when a RobustnessCheck (STABLE or SENSITIVE) is passed to evaluate_multi_criteria,
+    it is preserved in DecisionAnalysis.robustness and reflected in recommendation.robustness_status.
+    """
+    engine = DecisionEngine()
+    from app.schemas.decision import RobustnessCheck, RobustnessScenario
+
+    rob_stable = RobustnessCheck(
+        check_id="rob_test_stable",
+        status="STABLE",
+        baseline_scenario=RobustnessScenario(scenario_name="base", assumptions={}, result_summary={}),
+        alternate_scenarios=[],
+        explanation="Findings are robust across scenarios.",
+        supporting_evidence_ids=["ev_fact_1"]
+    )
+
+    candidates = [{"region": "North", "rev": 100.0}]
+    criteria = [{"name": "Rev", "metric": "rev", "direction": "maximize"}]
+
+    analysis_stable = engine.evaluate_multi_criteria(candidates, criteria, robustness=rob_stable)
+    assert analysis_stable.robustness is not None
+    assert analysis_stable.robustness.status == "STABLE"
+    assert analysis_stable.recommendation.robustness_status == "STABLE"
+
+    rob_sensitive = RobustnessCheck(
+        check_id="rob_test_sensitive",
+        status="SENSITIVE",
+        baseline_scenario=RobustnessScenario(scenario_name="base", assumptions={}, result_summary={}),
+        alternate_scenarios=[],
+        explanation="Finding shifted under alternate assumptions.",
+        supporting_evidence_ids=["ev_fact_1"]
+    )
+    analysis_sensitive = engine.evaluate_multi_criteria(candidates, criteria, robustness=rob_sensitive)
+    assert analysis_sensitive.robustness.status == "SENSITIVE"
+    assert analysis_sensitive.recommendation.robustness_status == "SENSITIVE"
+
+
+def test_multi_criteria_candidate_id_fallback_on_none_and_whitespace():
+    """
+    Edge case: Candidate records with None or whitespace-only candidate IDs
+    must safely fall back to Candidate_N rather than using 'None' or blank.
+    """
+    engine = DecisionEngine()
+    candidates = [
+        {"candidate": None, "sales": 100.0},
+        {"candidate": "   ", "sales": 80.0},
+        {"candidate": "Valid_Candidate", "sales": 60.0}
+    ]
+    criteria = [{"name": "SalesMax", "metric": "sales", "direction": "maximize"}]
+
+    rankings = engine.rank_candidates_multi_criteria(candidates, criteria, key_col="candidate")
+    assert len(rankings) == 3
+    assert rankings[0]["candidate_id"] == "Candidate_1"
+    assert rankings[1]["candidate_id"] == "Candidate_2"
+    assert rankings[2]["candidate_id"] == "Valid_Candidate"
+
+
+def test_multi_criteria_negative_metric_continuous_scoring():
+    """
+    Numerical safety: Negative metric values normalized under maximize and minimize.
+    """
+    engine = DecisionEngine()
+    candidates = [
+        {"id": "A", "debt": -500.0},
+        {"id": "B", "debt": -200.0},
+        {"id": "C", "debt": -50.0}
+    ]
+    # Maximize: -50.0 is best (closest to 0), -500.0 is worst
+    criteria_max = [{"name": "DebtMax", "metric": "debt", "direction": "maximize"}]
+    rankings_max = engine.rank_candidates_multi_criteria(candidates, criteria_max, key_col="id")
+    assert rankings_max[0]["id"] == "C"
+    assert rankings_max[0]["score"] == 1.0
+    assert rankings_max[2]["id"] == "A"
+    assert rankings_max[2]["score"] == 0.0
+
+    # Minimize: -500.0 is best (lowest), -50.0 is worst
+    criteria_min = [{"name": "DebtMin", "metric": "debt", "direction": "minimize"}]
+    rankings_min = engine.rank_candidates_multi_criteria(candidates, criteria_min, key_col="id")
+    assert rankings_min[0]["id"] == "A"
+    assert rankings_min[0]["score"] == 1.0
+    assert rankings_min[2]["id"] == "C"
+    assert rankings_min[2]["score"] == 0.0
+
+
+def test_multi_criteria_nan_and_inf_metrics_handled_safely():
+    """
+    Numerical safety: Candidates containing NaN or +/-inf metric values
+    receive 0.0 normalized score without raising exceptions or contaminating min/max pools.
+    """
+    engine = DecisionEngine()
+    candidates = [
+        {"id": "Good", "sales": 100.0},
+        {"id": "NaN_Cand", "sales": float('nan')},
+        {"id": "Inf_Cand", "sales": float('inf')}
+    ]
+    criteria = [{"name": "SalesMax", "metric": "sales", "direction": "maximize"}]
+
+    rankings = engine.rank_candidates_multi_criteria(candidates, criteria, key_col="id")
+    assert len(rankings) == 3
+    good_cand = next(r for r in rankings if r["id"] == "Good")
+    nan_cand = next(r for r in rankings if r["id"] == "NaN_Cand")
+    inf_cand = next(r for r in rankings if r["id"] == "Inf_Cand")
+
+    assert good_cand["score"] == 1.0
+    assert nan_cand["score"] == 0.0
+    assert inf_cand["score"] == 0.0
+    assert "SalesMax" in nan_cand["criteria_failed"]
+    assert "SalesMax" in inf_cand["criteria_failed"]
+
+
+def test_robustness_zero_threshold_behavior():
+    """
+    Edge case: threshold_pct = 0.0 is a valid finite threshold.
+    Any non-zero shift or candidate change triggers SENSITIVE classification.
+    """
+    engine = RobustnessEngine()
+    ev = EvidenceItem(evidence_id="ev_fact_1", evidence_type=EvidenceType.FACT, description="Fact")
+    baseline = [{"region": "North", "sales": 100.0}]
+    alternate = [{"region": "North", "sales": 105.0}]
+
+    res = engine.evaluate_multi_scenario_robustness(
+        baseline_data=baseline,
+        scenarios=[{"name": "alt_5pct", "data": alternate}],
+        evidence_items=[ev],
+        threshold_pct=0.0
+    )
+    assert res.status == "SENSITIVE"
+    assert res.alternate_scenarios[0].is_recommendation_changed is True
+
+
+def test_robustness_negative_baseline_metric_shift():
+    """
+    Numerical safety: Negative baseline metric evaluated without division by zero.
+    Percentage shift uses |baseline| in denominator.
+    """
+    engine = RobustnessEngine()
+    ev = EvidenceItem(evidence_id="ev_fact_1", evidence_type=EvidenceType.FACT, description="Fact")
+    baseline = [{"region": "North", "net_profit": -100.0}]
+    alternate = [{"region": "North", "net_profit": -80.0}]
+
+    res = engine.evaluate_multi_scenario_robustness(
+        baseline_data=baseline,
+        scenarios=[{"name": "improved_profit", "data": alternate}],
+        evidence_items=[ev],
+        threshold_pct=5.0
+    )
+    # (-80 - -100) / |-100| * 100 = 20.0% shift, which exceeds 5.0% threshold
+    assert res.status == "SENSITIVE"
+    assert res.alternate_scenarios[0].result_summary["metric_shift_percent"] == 20.0
+
+
+def test_multi_criteria_decision_engine_robustness_flow():
+    """
+    Interaction audit: Evaluates multi-criteria candidate rankings, feeds the output
+    directly into RobustnessEngine, and verifies that key_col resolves to 'candidate_id'
+    and metric_col resolves to 'score' seamlessly.
+    """
+    dec_engine = DecisionEngine()
+    rob_engine = RobustnessEngine()
+
+    candidates = [
+        {"candidate": "Vendor_A", "price": 100.0, "quality": 95.0},
+        {"candidate": "Vendor_B", "price": 80.0, "quality": 70.0}
+    ]
+    criteria = [
+        {"name": "PriceMin", "metric": "price", "direction": "minimize", "weight": 1.0},
+        {"name": "QualityMax", "metric": "quality", "direction": "maximize", "weight": 2.0}
+    ]
+
+    rankings = dec_engine.rank_candidates_multi_criteria(candidates, criteria, key_col="candidate")
+    assert len(rankings) == 2
+    assert rankings[0]["candidate_id"] == "Vendor_A"
+
+    ev = EvidenceItem(evidence_id="ev_fact_1", evidence_type=EvidenceType.FACT, description="Vendor fact")
+
+    # Pass multi-criteria rankings directly as query_data to robustness assessment
+    rob_assessment = rob_engine.run_robustness_assessment(
+        evidence_items=[ev],
+        query_data=rankings,
+        scenario_description="Vendor selection robustness"
+    )
+    assert rob_assessment.baseline_scenario.assumptions["primary_key"] == "candidate_id"
+    assert rob_assessment.baseline_scenario.result_summary["top_candidate"] == "Vendor_A"
+
+    # Multi-scenario robustness using ranked candidates as baseline
+    alt_rankings = [
+        {"candidate_id": "Vendor_B", "score": 0.95},  # Vendor_B score improves under shock
+        {"candidate_id": "Vendor_A", "score": 0.40}   # Vendor_A score drops under shock
+    ]
+    multi_rob = rob_engine.evaluate_multi_scenario_robustness(
+        baseline_data=rankings,
+        scenarios=[{"name": "supplier_shock", "data": alt_rankings}],
+        evidence_items=[ev],
+        threshold_pct=5.0
+    )
+    assert multi_rob.status == "SENSITIVE"
+    assert multi_rob.baseline_scenario.assumptions["primary_key"] == "candidate_id"
+    assert multi_rob.baseline_scenario.assumptions["metric"] == "score"
+    assert multi_rob.baseline_scenario.result_summary["top_candidate"] == "Vendor_A"

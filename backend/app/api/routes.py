@@ -14,7 +14,9 @@ from app.schemas.investigation import (
     InvestigationSummary,
     InvestigationDetail,
     InvestigationReassessRequest,
-    InvestigationReassessResponse
+    InvestigationReassessResponse,
+    InvestigationReviewCreate,
+    InvestigationReviewResponse
 )
 from app.services.investigation_service import InvestigationService
 from app.ai.provider import BaseLLMProvider, get_llm_provider
@@ -177,13 +179,22 @@ def get_investigation_detail(
     db: Session = Depends(get_db)
 ):
     """
-    Retrieves full investigation detail including stored AskResponse result_json by investigation_id.
+    Retrieves full investigation detail including stored AskResponse result_json and latest human review info.
     Raises HTTP 404 if investigation record is not found.
     """
     record = InvestigationService.get_investigation_by_id(db=db, investigation_id=investigation_id)
     if not record:
         raise HTTPException(status_code=404, detail=f"Investigation with ID '{investigation_id}' not found.")
-    return InvestigationDetail.model_validate(record)
+
+    detail = InvestigationDetail.model_validate(record)
+    latest_rev = InvestigationService.get_latest_review(db=db, investigation_id=investigation_id)
+    reviews = InvestigationService.list_reviews_for_investigation(db=db, investigation_id=investigation_id)
+
+    if latest_rev:
+        detail.latest_review = InvestigationReviewResponse.model_validate(latest_rev)
+    detail.review_count = len(reviews)
+
+    return detail
 
 
 @router.post("/api/investigations/{investigation_id}/reassess", response_model=InvestigationReassessResponse)
@@ -211,3 +222,35 @@ def reassess_investigation_robustness(
             raise HTTPException(status_code=400, detail=err_str)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Re-assessment execution error: {str(exc)}")
+
+
+@router.post("/api/investigations/{investigation_id}/review", response_model=InvestigationReviewResponse)
+def create_investigation_review(
+    investigation_id: str,
+    request: InvestigationReviewCreate,
+    db: Session = Depends(get_db)
+):
+    """
+    Submits a persistent Human-in-the-Loop review decision (APPROVED, REJECTED, FLAGGED) for an investigation.
+    Does NOT invoke the LLM provider or execute database SQL queries.
+    Does NOT mutate original investigation result_json or robustness findings.
+    """
+    try:
+        review_record = InvestigationService.create_review(
+            db=db,
+            investigation_id=investigation_id,
+            review_data=request
+        )
+        return InvestigationReviewResponse.model_validate(review_record)
+    except ValueError as err:
+        err_str = str(err)
+        if "not found" in err_str.lower():
+            raise HTTPException(status_code=404, detail=err_str)
+        elif "in_progress" in err_str.lower():
+            raise HTTPException(status_code=400, detail=err_str)
+        else:
+            raise HTTPException(status_code=400, detail=err_str)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Review submission execution error: {str(exc)}")

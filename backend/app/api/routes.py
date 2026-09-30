@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends
+import time
+from typing import List, Optional
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from app.core.db import get_db
@@ -8,6 +10,8 @@ from app.services.schema_introspection import get_database_schema
 from app.tools.sql_tool import execute_read_only_sql
 from app.schemas.sql_tool import SQLQueryRequest, SQLQueryResult, SchemaContext
 from app.schemas.ai import AskRequest, AskResponse
+from app.schemas.investigation import InvestigationSummary, InvestigationDetail
+from app.services.investigation_service import InvestigationService
 from app.ai.provider import BaseLLMProvider, get_llm_provider
 from app.ai.orchestrator import run_investigation_loop
 
@@ -79,10 +83,99 @@ def ask_business_question(
     """
     Natural language decision intelligence endpoint.
     Orchestrates AI reasoning with safe tool calling, evidence assembly, decision intelligence analysis, and robustness testing.
+    Persists durable investigation lifecycle state (IN_PROGRESS -> COMPLETED / REQUIRES_REVIEW / FAILED).
     """
-    return run_investigation_loop(
-        question=request.question,
-        db=db,
-        provider=provider,
-        max_turns=request.max_turns or 3
-    )
+    start_time = time.perf_counter()
+    inv_record = None
+
+    # Step 1. Persist IN_PROGRESS investigation record
+    try:
+        inv_record = InvestigationService.create_investigation(
+            db=db,
+            question=request.question
+        )
+    except Exception:
+        pass
+
+    inv_id = inv_record.investigation_id if inv_record else InvestigationService.generate_investigation_id()
+
+    # Step 2. Execute Orchestration Loop
+    try:
+        response = run_investigation_loop(
+            question=request.question,
+            db=db,
+            provider=provider,
+            max_turns=request.max_turns or 3
+        )
+        end_time = time.perf_counter()
+        exec_ms = (end_time - start_time) * 1000.0
+
+        # Attach investigation_id to metadata
+        if response.metadata is None:
+            response.metadata = {}
+        response.metadata["investigation_id"] = inv_id
+
+        # Step 3. Persist lifecycle completion status
+        if inv_record:
+            try:
+                if response.success:
+                    InvestigationService.update_investigation_success(
+                        db=db,
+                        investigation_id=inv_id,
+                        response=response,
+                        execution_time_ms=exec_ms
+                    )
+                else:
+                    InvestigationService.update_investigation_failure(
+                        db=db,
+                        investigation_id=inv_id,
+                        error_message=response.error or "Investigation failed with empty response.",
+                        execution_time_ms=exec_ms
+                    )
+            except Exception:
+                pass
+
+        return response
+
+    except Exception as exc:
+        end_time = time.perf_counter()
+        exec_ms = (end_time - start_time) * 1000.0
+        if inv_record:
+            try:
+                InvestigationService.update_investigation_failure(
+                    db=db,
+                    investigation_id=inv_id,
+                    error_message=str(exc),
+                    execution_time_ms=exec_ms
+                )
+            except Exception:
+                pass
+        raise
+
+
+@router.get("/api/investigations", response_model=List[InvestigationSummary])
+def list_investigations_history(
+    limit: int = Query(default=20, ge=1, le=100, description="Maximum number of records to return."),
+    offset: int = Query(default=0, ge=0, description="Offset pagination index."),
+    db: Session = Depends(get_db)
+):
+    """
+    Retrieves lightweight investigation summaries ordered newest-first (created_at DESC).
+    """
+    records = InvestigationService.list_investigations(db=db, limit=limit, offset=offset)
+    return [InvestigationSummary.model_validate(r) for r in records]
+
+
+@router.get("/api/investigations/{investigation_id}", response_model=InvestigationDetail)
+def get_investigation_detail(
+    investigation_id: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Retrieves full investigation detail including stored AskResponse result_json by investigation_id.
+    Raises HTTP 404 if investigation record is not found.
+    """
+    record = InvestigationService.get_investigation_by_id(db=db, investigation_id=investigation_id)
+    if not record:
+        raise HTTPException(status_code=404, detail=f"Investigation with ID '{investigation_id}' not found.")
+    return InvestigationDetail.model_validate(record)

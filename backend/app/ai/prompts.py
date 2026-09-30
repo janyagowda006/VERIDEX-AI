@@ -93,3 +93,29 @@ def format_schema_for_prompt(schema: SchemaContext) -> str:
                 lines.append(f"  - FK: ({src}) -> {target}")
         lines.append("")
     return "\n".join(lines).strip()
+
+
+def format_deterministic_reasoning_context(analysis: Any) -> str:
+    """
+    Formats deterministic DecisionAnalysis and RobustnessCheck into concise text context for LLM prompt injection.
+    Instructs the LLM to treat the deterministic robustness findings as authoritative.
+    """
+    if not analysis:
+        return ""
+    lines = ["DETERMINISTIC DECISION & ROBUSTNESS ANALYSIS (AUTHORITATIVE):"]
+    if hasattr(analysis, "summary") and analysis.summary:
+        lines.append(f"- Decision Summary: {analysis.summary}")
+    if hasattr(analysis, "recommendation") and analysis.recommendation:
+        rec = analysis.recommendation
+        lines.append(f"- Recommended Action: {rec.action_title}")
+        lines.append(f"- Rationale: {rec.rationale}")
+        lines.append(f"- Deterministic Robustness Status: {rec.robustness_status}")
+    if hasattr(analysis, "robustness") and analysis.robustness:
+        rob = analysis.robustness
+        lines.append(f"- Scenario Assessment: {rob.explanation}")
+        if hasattr(rob, "alternate_scenarios") and rob.alternate_scenarios:
+            for sc in rob.alternate_scenarios:
+                chg = "CHANGED" if sc.is_recommendation_changed else "UNCHANGED"
+                lines.append(f"  * Scenario '{sc.scenario_name}': recommendation {chg}")
+    lines.append("STRICT INSTRUCTION: Treat the above deterministic analysis as authoritative. Do NOT alter the robustness status or fabricate different scenario conclusions.")
+    return "\n".join(lines)

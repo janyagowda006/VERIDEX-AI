@@ -1,10 +1,11 @@
 import json
 import re
+import math
 from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
 from app.schemas.ai import AskResponse, ToolCallRecord
 from app.schemas.evidence import EvidenceItem, ClaimEvidence, EvidenceType
-from app.schemas.decision import DecisionAnalysis
+from app.schemas.decision import DecisionAnalysis, RobustnessCheck
 from app.schemas.sql_tool import SQLQueryRequest, SQLQueryResult
 from app.services.schema_introspection import get_database_schema
 from app.services.evidence_assembler import EvidenceAssembler
@@ -12,8 +13,14 @@ from app.services.evidence_calculations import EvidenceCalculator
 from app.services.decision_engine import DecisionEngine
 from app.services.robustness import RobustnessEngine
 from app.tools.sql_tool import execute_read_only_sql
-from app.ai.prompts import SYSTEM_PROMPT_V3, format_schema_for_prompt
+from app.ai.prompts import (
+    SYSTEM_PROMPT_V3,
+    format_schema_for_prompt,
+    format_deterministic_reasoning_context
+)
 from app.ai.provider import BaseLLMProvider
+
+DEFAULT_SCENARIO_SHIFT_PCT: float = 10.0
 
 
 def _normalize_sql(sql_str: str) -> str:
@@ -55,6 +62,93 @@ def _split_into_sentences(text: str) -> List[str]:
         else:
             units.append(line)
     return units
+
+
+def _is_valid_finite_number(val: Any) -> bool:
+    """Validates that a value is a valid, finite real number (not None, bool, str, NaN, or inf)."""
+    if val is None or isinstance(val, bool) or not isinstance(val, (int, float)):
+        return False
+    try:
+        return math.isfinite(float(val))
+    except (ValueError, TypeError, OverflowError):
+        return False
+
+
+def _evaluate_orchestrated_robustness(
+    robustness_engine: RobustnessEngine,
+    evidence_items: List[EvidenceItem],
+    query_data: Optional[List[Dict[str, Any]]] = None
+) -> RobustnessCheck:
+    """
+    Evaluates robustness deterministically across automated multi-scenario stress tests (+/-10% metric shifts)
+    when query data contains valid numeric candidate metrics.
+    Falls back to baseline single-scenario assessment if query data is non-numeric or empty.
+    Never mutates original query_data.
+    """
+    if not isinstance(query_data, list) or len(query_data) == 0 or not isinstance(query_data[0], dict) or not query_data[0]:
+        return robustness_engine.run_robustness_assessment(
+            evidence_items=evidence_items,
+            query_data=query_data
+        )
+
+    first_row = query_data[0]
+
+    # Identify primary candidate key column
+    key_col = next(
+        (c for c in ["candidate_id", "candidate", "name", "id", "region", "product_name", "customer_name", "category"] if c in first_row),
+        list(first_row.keys())[0]
+    )
+
+    # Identify primary numeric metric column
+    non_key_cols = [c for c in first_row.keys() if c != key_col]
+    metric_col: Optional[str] = None
+    for c in non_key_cols:
+        if any(_is_valid_finite_number(r.get(c)) for r in query_data if isinstance(r, dict)):
+            metric_col = c
+            break
+
+    if not metric_col:
+        return robustness_engine.run_robustness_assessment(
+            evidence_items=evidence_items,
+            query_data=query_data
+        )
+
+    # Build deterministic scenario datasets without mutating baseline query_data
+    minus_10_rows: List[Dict[str, Any]] = []
+    plus_10_rows: List[Dict[str, Any]] = []
+
+    for row in query_data:
+        r_minus = dict(row)
+        r_plus = dict(row)
+        if metric_col in row and _is_valid_finite_number(row[metric_col]):
+            val = float(row[metric_col])
+            r_minus[metric_col] = round(val * (1.0 - DEFAULT_SCENARIO_SHIFT_PCT / 100.0), 4)
+            r_plus[metric_col] = round(val * (1.0 + DEFAULT_SCENARIO_SHIFT_PCT / 100.0), 4)
+        minus_10_rows.append(r_minus)
+        plus_10_rows.append(r_plus)
+
+    scenarios = [
+        {
+            "scenario_name": f"{metric_col}_minus_{int(DEFAULT_SCENARIO_SHIFT_PCT)}_percent",
+            "assumptions": {"metric": metric_col, "shift_pct": -DEFAULT_SCENARIO_SHIFT_PCT},
+            "data": minus_10_rows
+        },
+        {
+            "scenario_name": f"{metric_col}_plus_{int(DEFAULT_SCENARIO_SHIFT_PCT)}_percent",
+            "assumptions": {"metric": metric_col, "shift_pct": DEFAULT_SCENARIO_SHIFT_PCT},
+            "data": plus_10_rows
+        }
+    ]
+
+    return robustness_engine.evaluate_multi_scenario_robustness(
+        baseline_data=query_data,
+        scenarios=scenarios,
+        evidence_items=evidence_items,
+        key_col=key_col,
+        metric_col=metric_col,
+        threshold_pct=5.0,
+        scenario_description="Automated multi-scenario metric shift evaluation"
+    )
 
 
 def _build_claims_and_evidence(
@@ -342,13 +436,29 @@ def run_investigation_loop(
             messages.append({"role": "model", "content": f"Requested tool 'sql_query' with SQL: {display_sql}"})
             messages.append({"role": "tool_result", "content": f"Tool Result for turn {turn}: {tool_res_text}"})
 
+            # Inject deterministic decision and multi-scenario robustness context for model's next turn
+            if sql_result.success and last_query_data:
+                inter_rob = _evaluate_orchestrated_robustness(
+                    robustness_engine, evidence_items, last_query_data
+                )
+                inter_analysis = decision_engine.analyze_decision(
+                    question=question,
+                    evidence_items=evidence_items,
+                    query_data=last_query_data,
+                    robustness=inter_rob
+                )
+                reasoning_ctx = format_deterministic_reasoning_context(inter_analysis)
+                if reasoning_ctx:
+                    messages.append({"role": "user", "content": reasoning_ctx})
+
         elif response.content:
             # Model synthesized final answer
             claims, final_evidence = _build_claims_and_evidence(response.content, evidence_items)
             clean_answer = _clean_text_tags(response.content) if response.content else ""
 
             # Run deterministic robustness assessment & decision engine
-            robustness_check = robustness_engine.run_robustness_assessment(
+            robustness_check = _evaluate_orchestrated_robustness(
+                robustness_engine=robustness_engine,
                 evidence_items=final_evidence,
                 query_data=last_query_data
             )
@@ -387,7 +497,8 @@ def run_investigation_loop(
             final_summary += f" Last tool call failed: {last_rec.result.error_message}"
 
     claims, final_evidence = _build_claims_and_evidence(final_summary, evidence_items)
-    robustness_check = robustness_engine.run_robustness_assessment(
+    robustness_check = _evaluate_orchestrated_robustness(
+        robustness_engine=robustness_engine,
         evidence_items=final_evidence,
         query_data=last_query_data
     )

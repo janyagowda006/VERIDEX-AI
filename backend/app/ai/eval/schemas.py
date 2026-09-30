@@ -51,6 +51,7 @@ class CaseEvaluation(BaseModel):
     decision_agreement: Optional[bool] = None  # None if non-decision query
     robustness_agreement: Optional[bool] = None
     error_message: Optional[str] = None
+    investigation_id: Optional[str] = None  # Optional persistent investigation UUID
 
 
 class BenchmarkReport(BaseModel):

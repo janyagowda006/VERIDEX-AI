@@ -2,6 +2,7 @@ import os
 import re
 import json
 import time
+import logging
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
@@ -9,12 +10,15 @@ from sqlalchemy.orm import Session
 from app.schemas.ai import AskResponse
 from app.ai.provider import BaseLLMProvider, MockLLMProvider
 from app.ai.orchestrator import run_investigation_loop
+from app.services.investigation_service import InvestigationService
 from app.ai.eval.schemas import (
     BenchmarkItem,
     CaseEvaluation,
     BenchmarkReport,
     BenchmarkCategory
 )
+
+logger = logging.getLogger(__name__)
 
 
 class ResponseEvaluator:
@@ -42,7 +46,8 @@ class ResponseEvaluator:
         cls,
         item: BenchmarkItem,
         response: AskResponse,
-        latency_ms: float
+        latency_ms: float,
+        investigation_id: Optional[str] = None
     ) -> CaseEvaluation:
         """
         Evaluates a single AskResponse against ground-truth benchmark item parameters.
@@ -54,9 +59,10 @@ class ResponseEvaluator:
                 question=item.question,
                 success=False,
                 execution_time_ms=latency_ms,
-                turns_used=response.metadata.get("total_turns", 0) if response else 0,
-                tool_calls_count=len(response.tool_calls) if response else 0,
-                error_message=response.error if response else "Execution failed with empty response."
+                turns_used=response.metadata.get("total_turns", 0) if (response and response.metadata) else 0,
+                tool_calls_count=len(response.tool_calls) if (response and response.tool_calls) else 0,
+                error_message=response.error if response else "Execution failed with empty response.",
+                investigation_id=investigation_id
             )
 
         # 1. SQL Execution Evaluation
@@ -121,7 +127,7 @@ class ResponseEvaluator:
             question=item.question,
             success=response.success,
             execution_time_ms=latency_ms,
-            turns_used=response.metadata.get("total_turns", 1),
+            turns_used=response.metadata.get("total_turns", 1) if response.metadata else 1,
             tool_calls_count=len(tool_calls),
             sql_executed=last_sql,
             sql_success=sql_success,
@@ -134,7 +140,8 @@ class ResponseEvaluator:
             citation_recall=citation_recall,
             decision_agreement=decision_agreement,
             robustness_agreement=robustness_agreement,
-            error_message=response.error
+            error_message=response.error,
+            investigation_id=investigation_id
         )
 
 
@@ -161,10 +168,12 @@ class BenchmarkRunner:
         db: Session,
         provider: BaseLLMProvider,
         max_turns: int = 3,
-        provider_name: str = "mock"
+        provider_name: str = "mock",
+        persist_investigations: bool = False
     ) -> BenchmarkReport:
         """
         Runs all benchmark dataset items sequentially and aggregates results into a BenchmarkReport.
+        Optionally persists each benchmark investigation to the database via InvestigationService.
         """
         evaluations: List[CaseEvaluation] = []
         total_cases = len(self.items)
@@ -174,20 +183,85 @@ class BenchmarkRunner:
             if hasattr(provider, "call_count"):
                 provider.call_count = 0
 
+            inv_id: Optional[str] = None
+            if persist_investigations and db:
+                try:
+                    inv = InvestigationService.create_investigation(
+                        db=db,
+                        question=item.question
+                    )
+                    inv_id = inv.investigation_id
+                except Exception as db_err:
+                    logger.warning(f"Failed to create benchmark investigation record for item {item.id}: {db_err}")
+
             start_time = time.perf_counter()
-            response = run_investigation_loop(
-                question=item.question,
-                db=db,
-                provider=provider,
-                max_turns=max_turns
-            )
+            response = None
+            try:
+                response = run_investigation_loop(
+                    question=item.question,
+                    db=db,
+                    provider=provider,
+                    max_turns=max_turns
+                )
+            except Exception as exc:
+                end_time = time.perf_counter()
+                latency_ms = round((end_time - start_time) * 1000.0, 2)
+                if persist_investigations and db and inv_id:
+                    try:
+                        InvestigationService.update_investigation_failure(
+                            db=db,
+                            investigation_id=inv_id,
+                            error_message=str(exc),
+                            execution_time_ms=latency_ms
+                        )
+                    except Exception as db_err:
+                        logger.warning(f"Failed to persist failed benchmark investigation {inv_id}: {db_err}")
+
+                err_response = AskResponse(
+                    success=False,
+                    question=item.question,
+                    answer="",
+                    error=str(exc)
+                )
+                case_eval = ResponseEvaluator.evaluate_case(
+                    item=item,
+                    response=err_response,
+                    latency_ms=latency_ms,
+                    investigation_id=inv_id
+                )
+                evaluations.append(case_eval)
+                continue
+
             end_time = time.perf_counter()
             latency_ms = round((end_time - start_time) * 1000.0, 2)
+
+            if persist_investigations and db and inv_id:
+                try:
+                    if response and response.success:
+                        InvestigationService.update_investigation_success(
+                            db=db,
+                            investigation_id=inv_id,
+                            response=response,
+                            execution_time_ms=latency_ms
+                        )
+                        if response.metadata is not None:
+                            response.metadata["investigation_id"] = inv_id
+                    else:
+                        err_msg = response.error if response else "Execution failed with empty response"
+                        InvestigationService.update_investigation_failure(
+                            db=db,
+                            investigation_id=inv_id,
+                            error_message=err_msg or "Execution failed",
+                            execution_time_ms=latency_ms
+                        )
+                except Exception as db_err:
+                    logger.warning(f"Failed to persist benchmark investigation {inv_id}: {db_err}")
 
             case_eval = ResponseEvaluator.evaluate_case(
                 item=item,
                 response=response,
-                latency_ms=latency_ms
+                latency_ms=latency_ms,
+                investigation_id=inv_id
             )
             evaluations.append(case_eval)
 

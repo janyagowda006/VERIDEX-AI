@@ -76,7 +76,8 @@ def format_report_markdown(report: BenchmarkReport) -> str:
 
     for case in report.case_evaluations:
         status_symbol = "[PASS]" if case.success else "[FAIL]"
-        md.append(f"{status_symbol} {case.item_id} [{case.category.value}] - {case.question}")
+        inv_str = f" [ID: {case.investigation_id}]" if case.investigation_id else ""
+        md.append(f"{status_symbol} {case.item_id}{inv_str} [{case.category.value}] - {case.question}")
         md.append(f"       Latency: {case.execution_time_ms}ms | Turns: {case.turns_used} | Tools: {case.tool_calls_count}")
         md.append(f"       SQL Success: {case.sql_success} | Evidence: {case.evidence_count} | Claims: {case.claims_count} (Unsupported: {case.unsupported_claims_count})")
         if case.tables_accessed:
@@ -93,8 +94,11 @@ def format_report_markdown(report: BenchmarkReport) -> str:
 
 def main():
     use_live = "--live" in sys.argv
+    persist = "--persist" in sys.argv
     provider_name = "gemini" if use_live else "mock"
     print(f"[VERIDEX EVAL] Initializing evaluation pipeline using {provider_name.upper()} provider...")
+    if persist:
+        print("[VERIDEX EVAL] Persistence enabled: benchmark investigations will be saved to DB.")
 
     db_session = create_eval_db_session()
 
@@ -108,7 +112,13 @@ def main():
         provider = MockLLMProvider()
 
     runner = BenchmarkRunner()
-    report = runner.run_benchmark(db=db_session, provider=provider, max_turns=3, provider_name=provider_name)
+    report = runner.run_benchmark(
+        db=db_session,
+        provider=provider,
+        max_turns=3,
+        provider_name=provider_name,
+        persist_investigations=persist
+    )
     db_session.close()
 
     formatted_md = format_report_markdown(report)

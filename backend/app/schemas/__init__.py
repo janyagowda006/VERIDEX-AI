@@ -26,6 +26,15 @@ from app.schemas.ai import (
     AskResponse,
     ToolCallRecord
 )
+from app.schemas.investigation import (
+    InvestigationStatus,
+    ReviewStatus,
+    ReviewDecision,
+    InvestigationSummary,
+    InvestigationReviewRequest,
+    InvestigationAuditLogEntry,
+    InvestigationDetailResponse
+)
 
 __all__ = [
     "SQLQueryRequest",
@@ -47,5 +56,12 @@ __all__ = [
     "DecisionAnalysis",
     "AskRequest",
     "AskResponse",
-    "ToolCallRecord"
+    "ToolCallRecord",
+    "InvestigationStatus",
+    "ReviewStatus",
+    "ReviewDecision",
+    "InvestigationSummary",
+    "InvestigationReviewRequest",
+    "InvestigationAuditLogEntry",
+    "InvestigationDetailResponse",
 ]

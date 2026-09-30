@@ -301,15 +301,64 @@
   color: #64748b;
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.5rem;
+  flex-wrap: wrap;
 }
 
-.ev-tag {
+.ev-label {
+  font-weight: 600;
+  color: #475569;
+}
+
+.ev-tags-group {
+  display: inline-flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.ev-tag, .ev-tag-btn {
   background-color: #e2e8f0;
-  color: #334155;
-  padding: 0.15rem 0.4rem;
+  color: #1e293b;
+  padding: 0.2rem 0.55rem;
   border-radius: 4px;
-  font-family: monospace;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border: 1px solid #cbd5e1;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.ev-tag-btn {
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+}
+
+.ev-tag-btn:hover {
+  background-color: #cbd5e1;
+  color: #0f172a;
+  border-color: #94a3b8;
+  transform: translateY(-1px);
+}
+
+.ev-tag-btn:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
+.ev-tag-btn.active {
+  background-color: #2563eb;
+  color: #ffffff;
+  border-color: #1d4ed8;
+  box-shadow: 0 1px 3px rgba(37, 99, 235, 0.3);
+}
+
+.claim-item.claim-item-active {
+  border-color: #93c5fd;
+  background-color: #eff6ff;
+  transition: all 0.2s ease;
 }
 
 /* Evidence Panel */
@@ -344,9 +393,48 @@
 
 .evidence-card {
   border: 1px solid #e2e8f0;
-  padding: 1rem;
+  padding: 1.15rem;
   border-radius: 8px;
   background-color: #fafafa;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+  position: relative;
+}
+
+.evidence-card.highlighted {
+  border-color: #2563eb;
+  background-color: #f8fafc;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
+  animation: evidencePulse 1.8s ease-out;
+}
+
+@keyframes evidencePulse {
+  0% {
+    box-shadow: 0 0 0 6px rgba(37, 99, 235, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.25);
+  }
+  100% {
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
+  }
+}
+
+.active-evidence-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #1d4ed8;
+  background-color: #dbeafe;
+  padding: 0.2rem 0.6rem;
+  border-radius: 9999px;
+  margin-bottom: 0.65rem;
+}
+
+.indicator-dot {
+  color: #2563eb;
+  font-size: 0.85rem;
 }
 
 .ev-card-header {
@@ -377,6 +465,74 @@
   font-size: 0.875rem;
 }
 
+.sql-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.35rem;
+}
+
+.trace-sql-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #334155;
+}
+
+.copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background-color: #ffffff;
+  color: #334155;
+  border: 1px solid #cbd5e1;
+  padding: 0.25rem 0.6rem;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+}
+
+.copy-btn:hover {
+  background-color: #f1f5f9;
+  color: #0f172a;
+  border-color: #94a3b8;
+}
+
+.copy-btn:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 1px;
+}
+
+.copy-btn.copied {
+  background-color: #dcfce7;
+  color: #15803d;
+  border-color: #86efac;
+}
+
+.copy-btn-sm {
+  padding: 0.15rem 0.45rem;
+  font-size: 0.7rem;
+}
+
+.copy-btn-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.copy-icon {
+  font-size: 0.8rem;
+}
+
+.calc-parents {
+  margin-top: 0.4rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
 .sql-block {
   background-color: #0f172a;
   color: #38bdf8;
@@ -393,7 +549,12 @@
   flex-wrap: wrap;
   margin-top: 0.5rem;
   font-size: 0.8rem;
-  color: #475569;
+}
+
+.meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
 }
 
 /* Tables */
@@ -432,6 +593,23 @@
   justify-content: space-between;
   align-items: center;
   margin-bottom: 0.5rem;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.rec-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.rec-evidence, .rob-evidence {
+  margin-top: 0.75rem;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
 }
 
 .crit-item {
@@ -509,6 +687,54 @@
 .flag-unchanged {
   background-color: #dcfce7;
   color: #15803d;
+}
+
+.flag-baseline {
+  background-color: #e0f2fe;
+  color: #0369a1;
+}
+
+.metric-group {
+  margin-top: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.metric-group-title {
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #64748b;
+}
+
+.metric-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.metric-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
+  padding: 0.25rem 0.55rem;
+  border-radius: 6px;
+  font-size: 0.8rem;
+}
+
+.chip-key {
+  font-weight: 600;
+  color: #475569;
+}
+
+.chip-val {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-weight: 700;
+  color: #0f172a;
 }
 
 /* Loading & Error */

@@ -1,6 +1,7 @@
 import React from 'react';
+import { CopyButton } from './CopyButton.jsx';
 
-export function DecisionCard({ analysis }) {
+export function DecisionCard({ analysis, selectedEvidenceId, onSelectEvidence }) {
   if (!analysis) return null;
 
   const { recommendation, criteria_evaluated = [], rankings = [] } = analysis;
@@ -13,14 +14,35 @@ export function DecisionCard({ analysis }) {
         <div className="recommendation-content">
           <div className="rec-header">
             <h3 className="rec-title">{recommendation.action_title}</h3>
-            <span className={`robustness-badge status-${recommendation.robustness_status.toLowerCase()}`}>
-              {recommendation.robustness_status}
-            </span>
+            <div className="rec-header-actions">
+              <CopyButton
+                text={`Recommendation: ${recommendation.action_title}\nRationale: ${recommendation.rationale}\nRobustness: ${recommendation.robustness_status}`}
+                label="Copy Recommendation"
+                className="copy-btn-sm"
+              />
+              <span className={`robustness-badge status-${recommendation.robustness_status.toLowerCase()}`}>
+                {recommendation.robustness_status}
+              </span>
+            </div>
           </div>
           <p className="rec-rationale"><strong>Rationale:</strong> {recommendation.rationale}</p>
           {recommendation.supporting_evidence_ids && recommendation.supporting_evidence_ids.length > 0 && (
             <div className="rec-evidence">
-              <strong>Supporting Evidence IDs:</strong> {recommendation.supporting_evidence_ids.join(', ')}
+              <span className="ev-label">Supporting Evidence:</span>
+              <div className="ev-tags-group">
+                {recommendation.supporting_evidence_ids.map((id) => (
+                  <button
+                    key={id}
+                    type="button"
+                    className={`ev-tag-btn ${selectedEvidenceId === id ? 'active' : ''}`}
+                    onClick={() => onSelectEvidence && onSelectEvidence(id)}
+                    title={`Inspect evidence item ${id}`}
+                    aria-label={`Jump to evidence item ${id}`}
+                  >
+                    {id}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
         </div>

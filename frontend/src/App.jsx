@@ -12,6 +12,7 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [useMock, setUseMock] = useState(true);
+  const [selectedEvidenceId, setSelectedEvidenceId] = useState(null);
 
   // Load initial mock investigation on mount
   useEffect(() => {
@@ -19,6 +20,7 @@ function App() {
   }, []);
 
   const handleRunInvestigation = async (question, forceMock = useMock) => {
+    setSelectedEvidenceId(null);
     setLoading(true);
     setError(null);
 
@@ -78,16 +80,38 @@ function App() {
         {data && !loading && (
           <>
             {/* 1. Synthesized Finding & Categorized Claims */}
-            <AnswerCard answer={data.answer} claims={data.claims || []} />
+            <AnswerCard
+              answer={data.answer}
+              claims={data.claims || []}
+              selectedEvidenceId={selectedEvidenceId}
+              onSelectEvidence={setSelectedEvidenceId}
+            />
 
             {/* 2. Actionable Decision Recommendation */}
-            {data.analysis && <DecisionCard analysis={data.analysis} />}
+            {data.analysis && (
+              <DecisionCard
+                analysis={data.analysis}
+                selectedEvidenceId={selectedEvidenceId}
+                onSelectEvidence={setSelectedEvidenceId}
+              />
+            )}
 
             {/* 3. Robustness Assessment */}
-            {data.analysis?.robustness && <RobustnessCard robustness={data.analysis.robustness} />}
+            {data.analysis?.robustness && (
+              <RobustnessCard
+                robustness={data.analysis.robustness}
+                selectedEvidenceId={selectedEvidenceId}
+                onSelectEvidence={setSelectedEvidenceId}
+              />
+            )}
 
             {/* 4. Verified Evidence & SQL Provenance Panel */}
-            <EvidencePanel evidence={data.evidence || []} toolCalls={data.tool_calls || []} />
+            <EvidencePanel
+              evidence={data.evidence || []}
+              toolCalls={data.tool_calls || []}
+              selectedEvidenceId={selectedEvidenceId}
+              onSelectEvidence={setSelectedEvidenceId}
+            />
           </>
         )}
       </main>

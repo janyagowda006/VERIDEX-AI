@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ClaimBadge } from './ClaimBadge.jsx';
+import { CopyButton } from './CopyButton.jsx';
 
 /**
  * Formats the calculation output based on the formula type defined in the API contract.
@@ -29,9 +30,25 @@ function formatCalculationOutput(calculation) {
   }
 }
 
-export function EvidencePanel({ evidence = [], toolCalls = [] }) {
+export function EvidencePanel({ evidence = [], toolCalls = [], selectedEvidenceId, onSelectEvidence }) {
   const [expanded, setExpanded] = useState(true);
   const [activeTab, setActiveTab] = useState('evidence');
+
+  // Bidirectional navigation: auto-expand and scroll to targeted evidence item
+  useEffect(() => {
+    if (!selectedEvidenceId) return;
+
+    const timer = setTimeout(() => {
+      setExpanded(true);
+      setActiveTab('evidence');
+      const el = document.getElementById(`evidence-${selectedEvidenceId}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 50);
+
+    return () => clearTimeout(timer);
+  }, [selectedEvidenceId]);
 
   if (!evidence.length && !toolCalls.length) return null;
 
@@ -46,12 +63,14 @@ export function EvidencePanel({ evidence = [], toolCalls = [] }) {
         <div className="evidence-body">
           <div className="tab-buttons">
             <button
+              type="button"
               className={`tab-btn ${activeTab === 'evidence' ? 'active' : ''}`}
               onClick={() => setActiveTab('evidence')}
             >
               Evidence Items ({evidence.length})
             </button>
             <button
+              type="button"
               className={`tab-btn ${activeTab === 'tools' ? 'active' : ''}`}
               onClick={() => setActiveTab('tools')}
             >
@@ -62,7 +81,17 @@ export function EvidencePanel({ evidence = [], toolCalls = [] }) {
           {activeTab === 'evidence' && (
             <div className="evidence-list">
               {evidence.map((item) => (
-                <div key={item.evidence_id} className="evidence-card">
+                <div
+                  key={item.evidence_id}
+                  id={`evidence-${item.evidence_id}`}
+                  className={`evidence-card ${selectedEvidenceId === item.evidence_id ? 'highlighted' : ''}`}
+                >
+                  {selectedEvidenceId === item.evidence_id && (
+                    <div className="active-evidence-indicator">
+                      <span className="indicator-dot" aria-hidden="true">●</span> Selected Evidence ({item.evidence_id})
+                    </div>
+                  )}
+
                   <div className="ev-card-header">
                     <span className="ev-id">{item.evidence_id}</span>
                     <ClaimBadge type={item.evidence_type} />
@@ -74,13 +103,23 @@ export function EvidencePanel({ evidence = [], toolCalls = [] }) {
                   {item.source && (
                     <div className="provenance-box">
                       <div className="prov-row">
-                        <strong>SQL Query:</strong>
-                        <pre className="sql-block">{item.source.sql}</pre>
+                        <div className="sql-header">
+                          <strong>SQL Query:</strong>
+                          <CopyButton text={item.source.sql} label="Copy SQL" className="copy-btn-sm" />
+                        </div>
+                        <pre className="sql-block"><code>{item.source.sql}</code></pre>
                       </div>
                       <div className="prov-meta">
-                        <span><strong>Query Hash:</strong> <code>{item.source.query_hash.substring(0, 16)}...</code></span>
-                        <span><strong>Execution Time:</strong> {item.source.execution_metadata.execution_time_ms} ms</span>
-                        <span><strong>Timestamp:</strong> {item.source.timestamp}</span>
+                        <span className="meta-item">
+                          <strong>Query Hash:</strong> <code>{item.source.query_hash.substring(0, 16)}...</code>
+                          <CopyButton text={item.source.query_hash} label="Copy Hash" className="copy-btn-sm" />
+                        </span>
+                        <span className="meta-item">
+                          <strong>Execution Time:</strong> {item.source.execution_metadata.execution_time_ms} ms
+                        </span>
+                        <span className="meta-item">
+                          <strong>Timestamp:</strong> {item.source.timestamp}
+                        </span>
                       </div>
 
                       {/* Sample Rows Table */}
@@ -115,7 +154,25 @@ export function EvidencePanel({ evidence = [], toolCalls = [] }) {
                       <div><strong>Formula:</strong> <code>{item.calculation.formula}</code></div>
                       <div><strong>Formula Output:</strong> {formatCalculationOutput(item.calculation)}</div>
                       <div><strong>Inputs:</strong> {JSON.stringify(item.calculation.inputs)}</div>
-                      <div><strong>Parent Evidence IDs:</strong> {item.calculation.input_evidence_ids.join(', ')}</div>
+                      {item.calculation.input_evidence_ids && item.calculation.input_evidence_ids.length > 0 && (
+                        <div className="calc-parents">
+                          <strong>Parent Evidence IDs:</strong>{' '}
+                          <span className="ev-tags-group">
+                            {item.calculation.input_evidence_ids.map((pId) => (
+                              <button
+                                key={pId}
+                                type="button"
+                                className={`ev-tag-btn ${selectedEvidenceId === pId ? 'active' : ''}`}
+                                onClick={() => onSelectEvidence && onSelectEvidence(pId)}
+                                title={`Inspect parent evidence item ${pId}`}
+                                aria-label={`Jump to parent evidence item ${pId}`}
+                              >
+                                {pId}
+                              </button>
+                            ))}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -144,7 +201,11 @@ export function EvidencePanel({ evidence = [], toolCalls = [] }) {
                       {tc.result.success ? 'SUCCESS' : 'FAILED'}
                     </span>
                   </div>
-                  <pre className="sql-block">{tc.arguments.sql}</pre>
+                  <div className="sql-header">
+                    <span className="trace-sql-label">Executed Query:</span>
+                    <CopyButton text={tc.arguments.sql} label="Copy SQL" className="copy-btn-sm" />
+                  </div>
+                  <pre className="sql-block"><code>{tc.arguments.sql}</code></pre>
                   <p className="trace-info">Returned {tc.result.row_count} records in {tc.result.metadata?.execution_time_ms || 0} ms</p>
                 </div>
               ))}

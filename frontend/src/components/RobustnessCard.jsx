@@ -1,4 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { reassessInvestigation } from '../api/client.js';
+import { ScenarioDiffView } from './ScenarioDiffView.jsx';
 
 function formatMetricKey(key) {
   if (!key) return '';
@@ -81,10 +83,36 @@ function RobustnessStatusMeter({ status }) {
   );
 }
 
-export function RobustnessCard({ robustness, selectedEvidenceId, onSelectEvidence }) {
+export function RobustnessCard({
+  robustness,
+  investigationId,
+  selectedEvidenceId,
+  onSelectEvidence,
+  useMock = false
+}) {
+  const [selectedShift, setSelectedShift] = useState(10);
+  const [reassessLoading, setReassessLoading] = useState(false);
+  const [reassessResult, setReassessResult] = useState(null);
+  const [reassessError, setReassessError] = useState(null);
+
   if (!robustness) return null;
 
   const { status, explanation, baseline_scenario, alternate_scenarios = [], supporting_evidence_ids = [] } = robustness;
+  const shiftPresets = [5, 10, 15, 20, 25, 30];
+
+  const handleReassessSubmit = async (shiftVal = selectedShift) => {
+    const targetInvId = investigationId || "inv_mock_123456";
+    setReassessLoading(true);
+    setReassessError(null);
+    try {
+      const res = await reassessInvestigation(targetInvId, shiftVal, useMock);
+      setReassessResult(res);
+    } catch (err) {
+      setReassessError(err.message || "Unable to reassess investigation. Please try again.");
+    } finally {
+      setReassessLoading(false);
+    }
+  };
 
   return (
     <div className="card robustness-card">
@@ -100,11 +128,66 @@ export function RobustnessCard({ robustness, selectedEvidenceId, onSelectEvidenc
 
       <p className="robustness-explanation">{explanation}</p>
 
+      {/* Interactive Scenario Shift Control Section */}
+      <div className="interactive-robustness-section">
+        <div className="section-title-bar">
+          <h3>Interactive Sensitivity Re-assessment</h3>
+          <span className="section-hint">Select stress perturbation magnitude (% metric shift)</span>
+        </div>
+
+        <div className="shift-controls-bar">
+          <div className="preset-buttons" role="group" aria-label="Scenario shift percentage presets">
+            {shiftPresets.map((pct) => (
+              <button
+                key={pct}
+                type="button"
+                className={`shift-preset-btn ${selectedShift === pct ? 'active' : ''}`}
+                onClick={() => setSelectedShift(pct)}
+                disabled={reassessLoading}
+              >
+                {pct}%
+              </button>
+            ))}
+          </div>
+
+          <button
+            type="button"
+            className="reassess-action-btn"
+            onClick={() => handleReassessSubmit(selectedShift)}
+            disabled={reassessLoading}
+          >
+            {reassessLoading ? (
+              <>
+                <span className="btn-spinner" aria-hidden="true"></span>
+                Re-assessing...
+              </>
+            ) : (
+              `Re-assess @ ${selectedShift}%`
+            )}
+          </button>
+        </div>
+
+        {reassessError && (
+          <div className="reassess-error-banner" role="alert">
+            <span className="error-icon" aria-hidden="true">⚠️</span>
+            <span>{reassessError}</span>
+          </div>
+        )}
+      </div>
+
+      {/* Render Scenario Diff View when Re-assessment Result is Available */}
+      {reassessResult && (
+        <ScenarioDiffView
+          reassessResult={reassessResult}
+          baselineRobustness={robustness}
+        />
+      )}
+
       {baseline_scenario && (
         <div className="scenario-box baseline-box">
           <div className="sc-header">
             <strong>Baseline Scenario: {formatMetricKey(baseline_scenario.scenario_name)}</strong>
-            <span className="sc-flag flag-baseline">BASELINE</span>
+            <span className="sc-flag flag-baseline">BASELINE (10%)</span>
           </div>
           <ScenarioMetrics data={baseline_scenario.assumptions} title="Assumptions" />
           <ScenarioMetrics data={baseline_scenario.result_summary} title="Observed Results" />
@@ -113,7 +196,7 @@ export function RobustnessCard({ robustness, selectedEvidenceId, onSelectEvidenc
 
       {alternate_scenarios.length > 0 && (
         <div className="alternate-scenarios-section">
-          <h4>Alternate Scenario Tests ({alternate_scenarios.length})</h4>
+          <h4>Baseline Alternate Scenario Tests ({alternate_scenarios.length})</h4>
           {alternate_scenarios.map((sc, idx) => (
             <div key={idx} className={`scenario-box alt-box ${sc.is_recommendation_changed ? 'changed' : 'unchanged'}`}>
               <div className="sc-header">

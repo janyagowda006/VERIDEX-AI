@@ -1,4 +1,9 @@
-import { MOCK_ASK_RESPONSE } from '../mocks/mockData.js';
+import {
+  MOCK_ASK_RESPONSE,
+  getMockReassessResponse,
+  getMockReviewResponse,
+  getMockInvestigationDetail
+} from '../mocks/mockData.js';
 
 /**
  * VERIDEX API client for decision intelligence queries.
@@ -31,6 +36,156 @@ export async function askQuestion(question, maxTurns = 3, useMock = false) {
       question: question,
       max_turns: maxTurns
     })
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`API Error (${response.status}): ${errorText}`);
+  }
+
+  return await response.json();
+}
+
+/**
+ * Executes dynamic metric robustness re-assessment on an existing persisted investigation.
+ * Connects to POST /api/investigations/{id}/reassess
+ *
+ * @param {string} investigationId - Persistent investigation identifier.
+ * @param {number} scenarioShiftPct - Percentage metric perturbation (e.g. 5, 10, 15, 20, 25, 30).
+ * @param {boolean} useMock - Whether to return mock data.
+ * @returns {Promise<Object>} InvestigationReassessResponse matching backend contract.
+ */
+export async function reassessInvestigation(investigationId, scenarioShiftPct = 10.0, useMock = false) {
+  if (!investigationId) {
+    throw new Error("Investigation ID is required for re-assessment.");
+  }
+
+  if (useMock) {
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        resolve(getMockReassessResponse(investigationId, scenarioShiftPct));
+      }, 400);
+    });
+  }
+
+  const response = await fetch(`/api/investigations/${encodeURIComponent(investigationId)}/reassess`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      scenario_shift_pct: Number(scenarioShiftPct)
+    })
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    let detail = errorText;
+    try {
+      const jsonErr = JSON.parse(errorText);
+      if (jsonErr.detail) detail = jsonErr.detail;
+    } catch {
+      // fallback
+    }
+    if (response.status === 404) {
+      throw new Error("Investigation not found.");
+    } else if (response.status === 422) {
+      throw new Error(`Validation Error: ${detail}`);
+    } else if (response.status === 400) {
+      throw new Error(`Invalid Request: ${detail}`);
+    } else {
+      throw new Error("Unable to reassess investigation. Please try again.");
+    }
+  }
+
+  return await response.json();
+}
+
+/**
+ * Submits a persistent Human-in-the-Loop review decision for an existing investigation.
+ * Connects to POST /api/investigations/{id}/review
+ *
+ * @param {string} investigationId - Persistent investigation identifier.
+ * @param {string} reviewStatus - Decision (APPROVED, REJECTED, FLAGGED).
+ * @param {string} reviewerId - Identifier of human reviewer.
+ * @param {string} reviewNotes - Optional reviewer rationale/notes.
+ * @param {boolean} useMock - Whether to return mock data.
+ * @returns {Promise<Object>} InvestigationReviewResponse matching backend contract.
+ */
+export async function submitReview(investigationId, reviewStatus, reviewerId, reviewNotes = null, useMock = false) {
+  if (!investigationId) {
+    throw new Error("Investigation ID is required for review submission.");
+  }
+
+  if (useMock) {
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        resolve(getMockReviewResponse(investigationId, reviewStatus, reviewerId, reviewNotes));
+      }, 400);
+    });
+  }
+
+  const response = await fetch(`/api/investigations/${encodeURIComponent(investigationId)}/review`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      review_status: reviewStatus,
+      reviewer_id: reviewerId,
+      review_notes: reviewNotes || null
+    })
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    let detail = errorText;
+    try {
+      const jsonErr = JSON.parse(errorText);
+      if (jsonErr.detail) detail = jsonErr.detail;
+    } catch {
+      // fallback
+    }
+    if (response.status === 404) {
+      throw new Error("Investigation not found.");
+    } else if (response.status === 400) {
+      throw new Error(`Cannot submit review: ${detail}`);
+    } else if (response.status === 422) {
+      throw new Error(`Validation Error: ${detail}`);
+    } else {
+      throw new Error("Review submission failed. Please try again.");
+    }
+  }
+
+  return await response.json();
+}
+
+/**
+ * Retrieves full investigation details by investigation_id.
+ * Connects to GET /api/investigations/{id}
+ *
+ * @param {string} investigationId - Persistent investigation identifier.
+ * @param {boolean} useMock - Whether to return mock data.
+ * @returns {Promise<Object>} InvestigationDetail matching backend contract.
+ */
+export async function getInvestigationDetail(investigationId, useMock = false) {
+  if (!investigationId) {
+    throw new Error("Investigation ID is required.");
+  }
+
+  if (useMock) {
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        resolve(getMockInvestigationDetail(investigationId));
+      }, 300);
+    });
+  }
+
+  const response = await fetch(`/api/investigations/${encodeURIComponent(investigationId)}`, {
+    method: 'GET',
+    headers: {
+      'Accept': 'application/json'
+    }
   });
 
   if (!response.ok) {

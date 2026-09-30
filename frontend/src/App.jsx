@@ -7,6 +7,7 @@ import { AnswerCard } from './components/AnswerCard.jsx';
 import { EvidencePanel } from './components/EvidencePanel.jsx';
 import { DecisionCard } from './components/DecisionCard.jsx';
 import { RobustnessCard } from './components/RobustnessCard.jsx';
+import { HumanReviewPanel } from './components/HumanReviewPanel.jsx';
 import './App.css';
 
 function App() {
@@ -161,13 +162,30 @@ function App() {
               </section>
             )}
 
-            {/* 4. Robustness Assessment */}
+            {/* 4. Human-in-the-Loop Audit & Review */}
+            <section className="investigation-step" aria-label="Step 4: Human-in-the-Loop Audit & Review">
+              <HumanReviewPanel
+                investigationId={data?.metadata?.investigation_id || "inv_mock_123456"}
+                investigationStatus={
+                  data?.metadata?.robustness_status === 'SENSITIVE'
+                    ? 'REQUIRES_REVIEW'
+                    : 'COMPLETED'
+                }
+                latestReview={data?.latest_review || null}
+                reviewCount={data?.review_count || 0}
+                useMock={useMock}
+              />
+            </section>
+
+            {/* 5. Robustness Assessment */}
             {data.analysis?.robustness && (
-              <section className="investigation-step" aria-label="Step 4: Robustness Assessment">
+              <section className="investigation-step" aria-label="Step 5: Robustness Assessment">
                 <RobustnessCard
                   robustness={data.analysis.robustness}
+                  investigationId={data?.metadata?.investigation_id || "inv_mock_123456"}
                   selectedEvidenceId={selectedEvidenceId}
                   onSelectEvidence={setSelectedEvidenceId}
+                  useMock={useMock}
                 />
               </section>
             )}

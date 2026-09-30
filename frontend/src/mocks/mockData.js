@@ -164,6 +164,7 @@ export const MOCK_ASK_RESPONSE = {
     }
   ],
   metadata: {
+    investigation_id: "inv_mock_123456",
     total_turns: 1,
     max_turns: 3,
     total_tool_calls: 1,
@@ -180,3 +181,87 @@ export const PRESET_QUESTIONS = [
   "Compare net revenue and completed order counts across channels",
   "Analyze cancellation and return rates by customer segment"
 ];
+
+/**
+ * Deterministic mock response generator for POST /api/investigations/{id}/reassess
+ */
+export function getMockReassessResponse(investigationId, scenarioShiftPct = 10.0) {
+  const shiftVal = Number(scenarioShiftPct) || 10.0;
+  const isSensitive = shiftVal >= 25.0;
+  const statusStr = isSensitive ? "SENSITIVE" : "STABLE";
+
+  return {
+    investigation_id: investigationId || "inv_mock_123456",
+    question: MOCK_ASK_RESPONSE.question,
+    original_scenario_shift_pct: 10.0,
+    requested_scenario_shift_pct: shiftVal,
+    baseline_top_candidate: "North",
+    baseline_metric_name: "gross_revenue",
+    robustness_check: {
+      check_id: `rob_reassess_${Math.round(shiftVal)}`,
+      status: statusStr,
+      baseline_scenario: {
+        scenario_name: "gross_revenue_baseline",
+        assumptions: { metric: "gross_revenue", primary_key: "region" },
+        result_summary: { top_candidate: "North", top_value: 1200000.0 },
+        is_recommendation_changed: false
+      },
+      alternate_scenarios: [
+        {
+          scenario_name: `gross_revenue_minus_${Math.round(shiftVal)}_percent`,
+          assumptions: { metric: "gross_revenue", shift_pct: -shiftVal },
+          result_summary: { top_candidate: isSensitive ? "South" : "North", perturbed_value: Math.round(1200000.0 * (1.0 - shiftVal / 100.0)) },
+          is_recommendation_changed: isSensitive
+        },
+        {
+          scenario_name: `gross_revenue_plus_${Math.round(shiftVal)}_percent`,
+          assumptions: { metric: "gross_revenue", shift_pct: shiftVal },
+          result_summary: { top_candidate: "North", perturbed_value: Math.round(1200000.0 * (1.0 + shiftVal / 100.0)) },
+          is_recommendation_changed: false
+        }
+      ],
+      explanation: isSensitive
+        ? `Perturbation of ${shiftVal}% reduces top candidate 'North' lead margin below 5.0% threshold against 'South', making finding SENSITIVE.`
+        : `Robustness check evaluated automated multi-scenario metric shift (+/-${shiftVal}%). Top candidate 'North' remains STABLE.`,
+      supporting_evidence_ids: ["ev_fact_1"]
+    },
+    reassessed_at: new Date().toISOString()
+  };
+}
+
+/**
+ * Deterministic mock response generator for POST /api/investigations/{id}/review
+ */
+export function getMockReviewResponse(investigationId, reviewStatus, reviewerId, reviewNotes) {
+  return {
+    review_id: `rev_mock_${Math.random().toString(36).substring(2, 8)}`,
+    investigation_id: investigationId || "inv_mock_123456",
+    review_status: reviewStatus || "APPROVED",
+    reviewer_id: (reviewerId || "analyst_mock").trim(),
+    review_notes: reviewNotes || null,
+    reviewed_at: new Date().toISOString()
+  };
+}
+
+/**
+ * Deterministic mock response generator for GET /api/investigations/{id}
+ */
+export function getMockInvestigationDetail(investigationId) {
+  return {
+    investigation_id: investigationId || "inv_mock_123456",
+    question: MOCK_ASK_RESPONSE.question,
+    status: "COMPLETED",
+    created_at: "2026-09-30T00:35:00Z",
+    completed_at: "2026-09-30T00:35:02Z",
+    execution_time_ms: 14.2,
+    turns_used: 1,
+    tool_calls_count: 1,
+    evidence_count: 3,
+    claims_count: 3,
+    robustness_status: "STABLE",
+    result_json: JSON.stringify(MOCK_ASK_RESPONSE),
+    error_message: null,
+    latest_review: null,
+    review_count: 0
+  };
+}

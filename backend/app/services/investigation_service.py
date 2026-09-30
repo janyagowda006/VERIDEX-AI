@@ -6,11 +6,13 @@ from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
-from app.models.investigation import Investigation, utcnow
+from app.models.investigation import Investigation, InvestigationReview, utcnow
 from app.schemas.investigation import (
     InvestigationStatus,
     InvestigationSummary,
-    InvestigationDetail
+    InvestigationDetail,
+    InvestigationReviewCreate,
+    InvestigationReviewStatus
 )
 from app.schemas.ai import AskResponse
 from app.services.robustness import ROBUSTNESS_STATUS_SENSITIVE
@@ -248,4 +250,81 @@ class InvestigationService:
             baseline_metric_name=baseline_metric,
             robustness_check=reassessed_check.model_dump(),
             reassessed_at=datetime.now(timezone.utc)
+        )
+
+    @staticmethod
+    def generate_review_id() -> str:
+        """Generates a unique review identifier with 'rev_' prefix."""
+        return f"rev_{uuid.uuid4().hex[:12]}"
+
+    @classmethod
+    def create_review(
+        cls,
+        db: Session,
+        investigation_id: str,
+        review_data: InvestigationReviewCreate
+    ) -> InvestigationReview:
+        """
+        Creates and persists a new append-only Human-in-the-Loop review record for an investigation.
+        Does NOT invoke the LLM or execute analytical SQL queries.
+        Does NOT mutate original investigation result_json or robustness findings.
+        """
+        investigation = cls.get_investigation_by_id(db=db, investigation_id=investigation_id)
+        if not investigation:
+            raise ValueError(f"Investigation with ID '{investigation_id}' not found.")
+
+        if investigation.status == InvestigationStatus.IN_PROGRESS.value:
+            raise ValueError(f"Cannot submit review for investigation '{investigation_id}' while status is IN_PROGRESS.")
+
+        status_str = review_data.review_status.value if hasattr(review_data.review_status, "value") else str(review_data.review_status)
+        reviewer_id_str = review_data.reviewer_id.strip()
+
+        review = InvestigationReview(
+            review_id=cls.generate_review_id(),
+            investigation_id=investigation_id,
+            review_status=status_str,
+            reviewer_id=reviewer_id_str,
+            review_notes=review_data.review_notes,
+            reviewed_at=utcnow()
+        )
+
+        try:
+            db.add(review)
+            db.commit()
+            db.refresh(review)
+            return review
+        except Exception:
+            db.rollback()
+            raise
+
+    @classmethod
+    def list_reviews_for_investigation(
+        cls,
+        db: Session,
+        investigation_id: str
+    ) -> List[InvestigationReview]:
+        """
+        Retrieves all persistent review records for an investigation ordered newest-first (reviewed_at DESC).
+        """
+        return (
+            db.query(InvestigationReview)
+            .filter(InvestigationReview.investigation_id == investigation_id)
+            .order_by(desc(InvestigationReview.reviewed_at))
+            .all()
+        )
+
+    @classmethod
+    def get_latest_review(
+        cls,
+        db: Session,
+        investigation_id: str
+    ) -> Optional[InvestigationReview]:
+        """
+        Retrieves the most recent persistent review record for an investigation.
+        """
+        return (
+            db.query(InvestigationReview)
+            .filter(InvestigationReview.investigation_id == investigation_id)
+            .order_by(desc(InvestigationReview.reviewed_at))
+            .first()
         )

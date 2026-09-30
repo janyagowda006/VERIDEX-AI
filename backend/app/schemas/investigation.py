@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, field_validator
 from typing import Optional, Dict, Any
 from datetime import datetime
 from enum import Enum
@@ -9,6 +9,12 @@ class InvestigationStatus(str, Enum):
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
     REQUIRES_REVIEW = "REQUIRES_REVIEW"
+
+
+class InvestigationReviewStatus(str, Enum):
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+    FLAGGED = "FLAGGED"
 
 
 class InvestigationCreate(BaseModel):
@@ -38,12 +44,50 @@ class InvestigationSummary(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class InvestigationReviewCreate(BaseModel):
+    """
+    Schema for submitting a Human-in-the-Loop review for an investigation.
+    """
+    review_status: InvestigationReviewStatus = Field(..., description="Review decision (APPROVED, REJECTED, FLAGGED).")
+    reviewer_id: str = Field(..., description="Identity of human reviewer (1 to 64 chars).")
+    review_notes: Optional[str] = Field(None, max_length=2000, description="Optional reviewer notes or rationale (up to 2000 chars).")
+
+    @field_validator("reviewer_id")
+    @classmethod
+    def validate_reviewer_id(cls, v: str) -> str:
+        if not isinstance(v, str):
+            raise ValueError("reviewer_id must be a string.")
+        s = v.strip()
+        if not s:
+            raise ValueError("reviewer_id cannot be empty or whitespace only.")
+        if len(s) > 64:
+            raise ValueError("reviewer_id cannot exceed 64 characters.")
+        return s
+
+
+class InvestigationReviewResponse(BaseModel):
+    """
+    Schema for representing a persisted Human-in-the-Loop review record.
+    """
+    review_id: str = Field(..., description="Unique review identifier.")
+    investigation_id: str = Field(..., description="Associated investigation identifier.")
+    review_status: str = Field(..., description="Review decision (APPROVED, REJECTED, FLAGGED).")
+    reviewer_id: str = Field(..., description="Identifier of human reviewer.")
+    review_notes: Optional[str] = Field(None, description="Optional reviewer notes.")
+    reviewed_at: datetime = Field(..., description="UTC timestamp of review submission.")
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class InvestigationDetail(InvestigationSummary):
     """
-    Detailed investigation schema including full AskResponse JSON payload and error context.
+    Detailed investigation schema including full AskResponse JSON payload, error context,
+    and Human-in-the-Loop review history.
     """
     result_json: Optional[str] = Field(None, description="Serialized AskResponse JSON result.")
     error_message: Optional[str] = Field(None, description="Error message if status is FAILED.")
+    latest_review: Optional[InvestigationReviewResponse] = Field(None, description="Most recent human review record if present.")
+    review_count: int = Field(default=0, description="Total number of human reviews submitted.")
 
     model_config = ConfigDict(from_attributes=True)
 

@@ -54,16 +54,24 @@ export function EvidencePanel({ evidence = [], toolCalls = [], selectedEvidenceI
 
   return (
     <div className="card evidence-panel">
-      <div className="card-header pointer" onClick={() => setExpanded(!expanded)}>
-        <h2>Verified Evidence & Provenance Trace ({evidence.length})</h2>
-        <span className="expand-icon">{expanded ? '▲' : '▼'}</span>
-      </div>
+      <button
+        type="button"
+        className="card-header card-header-toggle pointer"
+        onClick={() => setExpanded(!expanded)}
+        aria-expanded={expanded}
+        aria-controls="evidence-panel-body"
+      >
+        <h2>Evidence & Provenance Trace ({evidence.length})</h2>
+        <span className="expand-icon" aria-hidden="true">{expanded ? '▲' : '▼'}</span>
+      </button>
 
       {expanded && (
-        <div className="evidence-body">
-          <div className="tab-buttons">
+        <div id="evidence-panel-body" className="evidence-body">
+          <div className="tab-buttons" role="tablist" aria-label="Evidence and SQL provenance tabs">
             <button
               type="button"
+              role="tab"
+              aria-selected={activeTab === 'evidence'}
               className={`tab-btn ${activeTab === 'evidence' ? 'active' : ''}`}
               onClick={() => setActiveTab('evidence')}
             >
@@ -71,6 +79,8 @@ export function EvidencePanel({ evidence = [], toolCalls = [], selectedEvidenceI
             </button>
             <button
               type="button"
+              role="tab"
+              aria-selected={activeTab === 'tools'}
               className={`tab-btn ${activeTab === 'tools' ? 'active' : ''}`}
               onClick={() => setActiveTab('tools')}
             >
@@ -80,7 +90,10 @@ export function EvidencePanel({ evidence = [], toolCalls = [], selectedEvidenceI
 
           {activeTab === 'evidence' && (
             <div className="evidence-list">
-              {evidence.map((item) => (
+              {evidence.length === 0 ? (
+                <p className="no-data-text">No evidence items recorded for this investigation.</p>
+              ) : (
+                evidence.map((item) => (
                 <div
                   key={item.evidence_id}
                   id={`evidence-${item.evidence_id}`}
@@ -187,7 +200,8 @@ export function EvidencePanel({ evidence = [], toolCalls = [], selectedEvidenceI
                     </div>
                   )}
                 </div>
-              ))}
+              ))
+            )}
             </div>
           )}
 

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { askQuestion } from './api/client.js';
+import { ThemeToggle } from './components/ThemeToggle.jsx';
 import { QuestionInput } from './components/QuestionInput.jsx';
 import { ExecutiveSummary } from './components/ExecutiveSummary.jsx';
 import { AnswerCard } from './components/AnswerCard.jsx';
@@ -14,6 +15,33 @@ function App() {
   const [error, setError] = useState(null);
   const [useMock, setUseMock] = useState(true);
   const [selectedEvidenceId, setSelectedEvidenceId] = useState(null);
+
+  // Theme state: respects localStorage preference, fallback to system preference
+  const [theme, setTheme] = useState(() => {
+    try {
+      const saved = localStorage.getItem('veridex_theme');
+      if (saved === 'dark' || saved === 'light') return saved;
+      if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        return 'dark';
+      }
+    } catch {
+      // safe fallback for restricted sandbox environments
+    }
+    return 'light';
+  });
+
+  useEffect(() => {
+    try {
+      document.documentElement.setAttribute('data-theme', theme);
+      localStorage.setItem('veridex_theme', theme);
+    } catch {
+      // safe fallback
+    }
+  }, [theme]);
+
+  const handleToggleTheme = () => {
+    setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
+  };
 
   // Load initial mock investigation on mount
   useEffect(() => {
@@ -42,18 +70,31 @@ function App() {
 
   return (
     <div className="container">
-      <header className="header">
-        <h1 className="title">VERIDEX</h1>
-        <p className="subtitle">Evidence-First AI Decision Intelligence Engine</p>
-        <div className="header-badges">
-          <span className="badge">AI Build Challenge 2026</span>
-          <span className={`mode-badge ${useMock ? 'mock' : 'live'}`}>
-            {useMock ? 'Mock API Mode' : 'Live API Mode'}
-          </span>
+      <header className="header" role="banner">
+        <div className="header-top">
+          <div className="brand-group">
+            <div className="brand-logo" aria-hidden="true">
+              <span className="logo-symbol">V</span>
+            </div>
+            <div>
+              <h1 className="title">VERIDEX</h1>
+              <p className="subtitle">Evidence-First AI Decision Intelligence Engine</p>
+            </div>
+          </div>
+          <div className="header-controls">
+            <div className="header-badges">
+              <span className="badge badge-platform">AI Build Challenge 2026</span>
+              <span className={`mode-badge ${useMock ? 'mock' : 'live'}`}>
+                <span className="mode-dot" aria-hidden="true">●</span>
+                {useMock ? 'Mock API Mode' : 'Live API Mode'}
+              </span>
+            </div>
+            <ThemeToggle theme={theme} onToggle={handleToggleTheme} />
+          </div>
         </div>
       </header>
 
-      <main className="content">
+      <main className="content" role="main">
         <QuestionInput
           onSubmit={(q) => handleRunInvestigation(q, useMock)}
           loading={loading}
@@ -65,62 +106,76 @@ function App() {
         />
 
         {error && (
-          <div className="card error-card">
-            <h2>Investigation Warning / Error</h2>
-            <p className="error-text">{error}</p>
+          <div className="card error-card" role="alert" aria-live="assertive">
+            <div className="error-icon" aria-hidden="true">⚠️</div>
+            <div className="error-body">
+              <h2>Investigation Notice</h2>
+              <p className="error-text">{error}</p>
+            </div>
           </div>
         )}
 
         {loading && (
-          <div className="card loading-card">
-            <div className="spinner"></div>
-            <p>Executing safe read-only SQL query & assembling deterministic evidence...</p>
+          <div className="card loading-card" role="status" aria-live="polite">
+            <div className="spinner" aria-hidden="true"></div>
+            <div className="loading-content">
+              <h3>Executing Investigation Pipeline</h3>
+              <p>Executing safe read-only SQL queries, evaluating deterministic calculations, and assembling evidence...</p>
+            </div>
           </div>
         )}
 
         {data && !loading && (
-          <>
+          <div className="investigation-flow">
             {/* Executive Summary & Key KPIs */}
             <ExecutiveSummary data={data} onSelectEvidence={setSelectedEvidenceId} />
 
             {/* 1. Synthesized Finding & Categorized Claims */}
-            <AnswerCard
-              answer={data.answer}
-              claims={data.claims || []}
-              selectedEvidenceId={selectedEvidenceId}
-              onSelectEvidence={setSelectedEvidenceId}
-            />
+            <section className="investigation-step" aria-label="Step 1: Synthesized Finding and Claims">
+              <AnswerCard
+                answer={data.answer}
+                claims={data.claims || []}
+                selectedEvidenceId={selectedEvidenceId}
+                onSelectEvidence={setSelectedEvidenceId}
+              />
+            </section>
 
-            {/* 2. Actionable Decision Recommendation */}
+            {/* 2. Evidence & SQL Provenance Trace */}
+            <section className="investigation-step" aria-label="Step 2: Evidence and Provenance Trace">
+              <EvidencePanel
+                evidence={data.evidence || []}
+                toolCalls={data.tool_calls || []}
+                selectedEvidenceId={selectedEvidenceId}
+                onSelectEvidence={setSelectedEvidenceId}
+              />
+            </section>
+
+            {/* 3. Actionable Decision Recommendation */}
             {data.analysis && (
-              <DecisionCard
-                analysis={data.analysis}
-                selectedEvidenceId={selectedEvidenceId}
-                onSelectEvidence={setSelectedEvidenceId}
-              />
+              <section className="investigation-step" aria-label="Step 3: Actionable Decision Recommendation">
+                <DecisionCard
+                  analysis={data.analysis}
+                  selectedEvidenceId={selectedEvidenceId}
+                  onSelectEvidence={setSelectedEvidenceId}
+                />
+              </section>
             )}
 
-            {/* 3. Robustness Assessment */}
+            {/* 4. Robustness Assessment */}
             {data.analysis?.robustness && (
-              <RobustnessCard
-                robustness={data.analysis.robustness}
-                selectedEvidenceId={selectedEvidenceId}
-                onSelectEvidence={setSelectedEvidenceId}
-              />
+              <section className="investigation-step" aria-label="Step 4: Robustness Assessment">
+                <RobustnessCard
+                  robustness={data.analysis.robustness}
+                  selectedEvidenceId={selectedEvidenceId}
+                  onSelectEvidence={setSelectedEvidenceId}
+                />
+              </section>
             )}
-
-            {/* 4. Verified Evidence & SQL Provenance Panel */}
-            <EvidencePanel
-              evidence={data.evidence || []}
-              toolCalls={data.tool_calls || []}
-              selectedEvidenceId={selectedEvidenceId}
-              onSelectEvidence={setSelectedEvidenceId}
-            />
-          </>
+          </div>
         )}
       </main>
 
-      <footer className="footer">
+      <footer className="footer" role="contentinfo">
         <p>VERIDEX — Traceable Evidence • Deterministic Calculations • Human Decisions</p>
       </footer>
     </div>

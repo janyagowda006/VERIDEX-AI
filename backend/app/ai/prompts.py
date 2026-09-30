@@ -62,6 +62,13 @@ EVIDENCE TAXONOMY:
 - DECISION & RECOMMENDATION: Actionable recommendations MUST trace to supporting evidence IDs.
 - ROBUSTNESS: Robustness status (STABLE, SENSITIVE, INSUFFICIENT_EVIDENCE) is deterministically computed by scenario testing. NEVER fabricate numerical confidence scores.
 
+ANSWER SYNTHESIS & ROBUSTNESS RULES:
+1. Treat the supplied deterministic decision and robustness analysis as authoritative. Never recalculate rankings or alter robustness statuses.
+2. If robustness status is STABLE: State clearly that the recommendation/finding remained consistent across tested scenario shifts.
+3. If robustness status is SENSITIVE: You MUST explicitly disclose that the finding or recommendation is sensitive to scenario assumptions or metric changes. Do NOT present sensitive findings as stable.
+4. If robustness status is INSUFFICIENT_EVIDENCE: You MUST state that data was insufficient to reach a robust conclusion. Do NOT claim stability.
+5. Synthesize answers in an evidence-first structure: (a) Key decision/finding, (b) Supporting evidence with exact citations, (c) Robustness & scenario assessment, (d) Known limitations.
+
 OPERATIONAL BOUNDARIES:
 1. Execute `sql_query` to gather database facts. NEVER invent business numbers or query output.
 2. Rely on the deterministic Decision Engine for rankings, calculations, threshold evaluations, and robustness checks.
@@ -98,11 +105,13 @@ def format_schema_for_prompt(schema: SchemaContext) -> str:
 def format_deterministic_reasoning_context(analysis: Any) -> str:
     """
     Formats deterministic DecisionAnalysis and RobustnessCheck into concise text context for LLM prompt injection.
-    Instructs the LLM to treat the deterministic robustness findings as authoritative.
+    Instructs the LLM to treat the deterministic robustness findings as authoritative and explicitly disclose status.
     """
     if not analysis:
         return ""
     lines = ["DETERMINISTIC DECISION & ROBUSTNESS ANALYSIS (AUTHORITATIVE):"]
+
+    # 1. Decision & Recommendation Summary
     if hasattr(analysis, "summary") and analysis.summary:
         lines.append(f"- Decision Summary: {analysis.summary}")
     if hasattr(analysis, "recommendation") and analysis.recommendation:
@@ -110,12 +119,31 @@ def format_deterministic_reasoning_context(analysis: Any) -> str:
         lines.append(f"- Recommended Action: {rec.action_title}")
         lines.append(f"- Rationale: {rec.rationale}")
         lines.append(f"- Deterministic Robustness Status: {rec.robustness_status}")
+
+    # 2. Robustness Status & Scenario Assessment
     if hasattr(analysis, "robustness") and analysis.robustness:
         rob = analysis.robustness
+        status = getattr(rob, "status", "INSUFFICIENT_EVIDENCE")
         lines.append(f"- Scenario Assessment: {rob.explanation}")
+
         if hasattr(rob, "alternate_scenarios") and rob.alternate_scenarios:
+            lines.append("- Alternate Scenario Details:")
             for sc in rob.alternate_scenarios:
-                chg = "CHANGED" if sc.is_recommendation_changed else "UNCHANGED"
-                lines.append(f"  * Scenario '{sc.scenario_name}': recommendation {chg}")
-    lines.append("STRICT INSTRUCTION: Treat the above deterministic analysis as authoritative. Do NOT alter the robustness status or fabricate different scenario conclusions.")
+                chg = "CHANGED (SENSITIVE)" if sc.is_recommendation_changed else "UNCHANGED (STABLE)"
+                lines.append(f"  * Scenario '{sc.scenario_name}': top candidate {chg}")
+
+        # Explicit Wording Directives per Status
+        lines.append("\nSYNTHESIS MANDATES FOR THIS ROBUSTNESS STATUS:")
+        if status == "STABLE":
+            lines.append("- STATUS IS STABLE: Explain that the recommended decision remained consistent and robust under tested metric sensitivity scenarios.")
+        elif status == "SENSITIVE":
+            lines.append("- STATUS IS SENSITIVE: You MUST explicitly disclaim and disclose in your answer that this recommendation is SENSITIVE to metric shifts or alternate assumptions.")
+        else:  # INSUFFICIENT_EVIDENCE
+            lines.append("- STATUS IS INSUFFICIENT_EVIDENCE: You MUST state that available database evidence is INSUFFICIENT to draw a robust conclusion.")
+
+    lines.append("\nSTRICT INSTRUCTIONS:")
+    lines.append("1. Treat the above deterministic analysis as authoritative. Do NOT alter rankings or override robustness status.")
+    lines.append("2. Cite factual claims using only exact bracketed evidence tags (e.g., [ev_fact_1]).")
+    lines.append("3. Do NOT claim certainty beyond observed evidence.")
+
     return "\n".join(lines)

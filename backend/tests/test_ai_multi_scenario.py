@@ -181,7 +181,7 @@ def test_deterministic_reasoning_context_formatting():
     assert "DETERMINISTIC DECISION & ROBUSTNESS ANALYSIS" in formatted
     assert "Prioritize Region 'North America'" in formatted
     assert "Deterministic Robustness Status: STABLE" in formatted
-    assert "STRICT INSTRUCTION:" in formatted
+    assert "STRICT INSTRUCTION" in formatted
 
 
 def test_orchestration_loop_injects_robustness_context(test_db_session):

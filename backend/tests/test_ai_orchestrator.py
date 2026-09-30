@@ -1,11 +1,14 @@
 import pytest
+from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
 from app.main import app
 from app.core.db import get_db
+from app.core.config import settings
 from app.schemas.ai import AskRequest
+from app.schemas.evidence import EvidenceItem, EvidenceType, ClaimEvidence
 from app.ai.prompts import SYSTEM_PROMPT_V1, format_schema_for_prompt
 from app.ai.provider import BaseLLMProvider, MockLLMProvider, GeminiProvider, ModelResponse, ToolCallRequest, get_llm_provider
-from app.ai.orchestrator import run_investigation_loop
+from app.ai.orchestrator import run_investigation_loop, _build_claims_and_evidence, _clean_text_tags
 from app.services.schema_introspection import get_database_schema
 
 client = TestClient(app)
@@ -154,3 +157,546 @@ def test_missing_api_key_handling():
     assert res.has_tool_call is False
     assert res.error is not None
     assert "api key is not configured" in res.error.lower()
+
+
+def test_provider_factory_selection():
+    """
+    Verifies get_llm_provider returns MockLLMProvider when configured as mock.
+    """
+    with patch.object(settings, "LLM_PROVIDER", "mock"):
+        provider = get_llm_provider()
+        assert isinstance(provider, MockLLMProvider)
+
+    with patch.object(settings, "LLM_PROVIDER", "gemini"):
+        provider = get_llm_provider()
+        assert isinstance(provider, GeminiProvider)
+
+
+def test_gemini_provider_sanitizes_error_messages():
+    """
+    Verifies GeminiProvider redacts API key from exception error messages.
+    """
+    provider = GeminiProvider(api_key="secret_test_key_12345")
+    with patch("google.genai.Client", side_effect=Exception("Failed connection using secret_test_key_12345")):
+        res = provider.generate_turn([{"role": "user", "content": "hello"}], [], "schema")
+        assert res.error is not None
+        assert "secret_test_key_12345" not in res.error
+        assert "[REDACTED_API_KEY]" in res.error
+
+
+def test_duplicate_sql_query_detection(test_db_session):
+    """
+    Verifies that requesting the exact same SQL query twice in the loop detects
+    the duplicate, skips secondary DB execution, and returns DUPLICATE_QUERY error.
+    """
+    responses = [
+        ModelResponse(
+            has_tool_call=True,
+            tool_call=ToolCallRequest(
+                tool_name="sql_query",
+                arguments={"sql": "SELECT * FROM customers LIMIT 5"}
+            )
+        ),
+        ModelResponse(
+            has_tool_call=True,
+            tool_call=ToolCallRequest(
+                tool_name="sql_query",
+                arguments={"sql": "SELECT * FROM customers LIMIT 5"}
+            )
+        ),
+        ModelResponse(
+            has_tool_call=False,
+            content="Analysis complete after duplicate query prevention."
+        )
+    ]
+    provider = MockLLMProvider(custom_responses=responses)
+    res = run_investigation_loop(
+        question="Duplicate query test",
+        db=test_db_session,
+        provider=provider,
+        max_turns=3
+    )
+
+    assert res.success is True
+    assert len(res.tool_calls) == 2
+    assert res.tool_calls[0].result.success is True
+    assert res.tool_calls[1].result.success is False
+    assert res.tool_calls[1].result.error_type == "DUPLICATE_QUERY"
+    assert "duplicate" in res.tool_calls[1].result.error_message.lower()
+
+
+def test_duplicate_sql_query_whitespace_normalization(test_db_session):
+    """
+    Verifies that SQL whitespace and case variations are normalized and recognized as duplicates.
+    """
+    responses = [
+        ModelResponse(
+            has_tool_call=True,
+            tool_call=ToolCallRequest(
+                tool_name="sql_query",
+                arguments={"sql": "SELECT * FROM customers LIMIT 5"}
+            )
+        ),
+        ModelResponse(
+            has_tool_call=True,
+            tool_call=ToolCallRequest(
+                tool_name="sql_query",
+                arguments={"sql": "  select   *   from   customers   limit  5  "}
+            )
+        ),
+        ModelResponse(
+            has_tool_call=False,
+            content="Analysis complete."
+        )
+    ]
+    provider = MockLLMProvider(custom_responses=responses)
+    res = run_investigation_loop(
+        question="Whitespace normalization test",
+        db=test_db_session,
+        provider=provider,
+        max_turns=3
+    )
+
+    assert res.success is True
+    assert len(res.tool_calls) == 2
+    assert res.tool_calls[0].result.success is True
+    assert res.tool_calls[1].result.success is False
+    assert res.tool_calls[1].result.error_type == "DUPLICATE_QUERY"
+
+
+def test_distinct_sql_queries_allowed(test_db_session):
+    """
+    Verifies that distinct SQL queries in consecutive turns both execute successfully.
+    """
+    responses = [
+        ModelResponse(
+            has_tool_call=True,
+            tool_call=ToolCallRequest(
+                tool_name="sql_query",
+                arguments={"sql": "SELECT * FROM customers LIMIT 2"}
+            )
+        ),
+        ModelResponse(
+            has_tool_call=True,
+            tool_call=ToolCallRequest(
+                tool_name="sql_query",
+                arguments={"sql": "SELECT * FROM products LIMIT 2"}
+            )
+        ),
+        ModelResponse(
+            has_tool_call=False,
+            content="Analysis complete for both tables."
+        )
+    ]
+    provider = MockLLMProvider(custom_responses=responses)
+    res = run_investigation_loop(
+        question="Distinct query test",
+        db=test_db_session,
+        provider=provider,
+        max_turns=3
+    )
+
+    assert res.success is True
+    assert len(res.tool_calls) == 2
+    assert res.tool_calls[0].result.success is True
+    assert res.tool_calls[1].result.success is True
+
+
+def test_malformed_tool_argument_missing_sql(test_db_session):
+    """
+    Verifies that tool call missing 'sql' argument returns MALFORMED_ARGUMENT error without calling DB.
+    """
+    responses = [
+        ModelResponse(
+            has_tool_call=True,
+            tool_call=ToolCallRequest(
+                tool_name="sql_query",
+                arguments={}
+            )
+        ),
+        ModelResponse(
+            has_tool_call=False,
+            content="Finished after receiving malformed argument error."
+        )
+    ]
+    provider = MockLLMProvider(custom_responses=responses)
+    res = run_investigation_loop(
+        question="Missing sql arg test",
+        db=test_db_session,
+        provider=provider,
+        max_turns=3
+    )
+
+    assert res.success is True
+    assert len(res.tool_calls) == 1
+    assert res.tool_calls[0].result.success is False
+    assert res.tool_calls[0].result.error_type == "MALFORMED_ARGUMENT"
+
+
+def test_malformed_tool_argument_non_string_sql(test_db_session):
+    """
+    Verifies that tool call with non-string 'sql' argument returns MALFORMED_ARGUMENT error without calling DB.
+    """
+    responses = [
+        ModelResponse(
+            has_tool_call=True,
+            tool_call=ToolCallRequest(
+                tool_name="sql_query",
+                arguments={"sql": 12345}
+            )
+        ),
+        ModelResponse(
+            has_tool_call=False,
+            content="Finished after receiving non-string argument error."
+        )
+    ]
+    provider = MockLLMProvider(custom_responses=responses)
+    res = run_investigation_loop(
+        question="Non-string sql arg test",
+        db=test_db_session,
+        provider=provider,
+        max_turns=3
+    )
+
+    assert res.success is True
+    assert len(res.tool_calls) == 1
+    assert res.tool_calls[0].result.success is False
+    assert res.tool_calls[0].result.error_type == "MALFORMED_ARGUMENT"
+
+
+def test_malformed_tool_argument_empty_sql(test_db_session):
+    """
+    Verifies that tool call with empty/whitespace-only 'sql' argument returns MALFORMED_ARGUMENT error.
+    """
+    responses = [
+        ModelResponse(
+            has_tool_call=True,
+            tool_call=ToolCallRequest(
+                tool_name="sql_query",
+                arguments={"sql": "   "}
+            )
+        ),
+        ModelResponse(
+            has_tool_call=False,
+            content="Finished after empty query error."
+        )
+    ]
+    provider = MockLLMProvider(custom_responses=responses)
+    res = run_investigation_loop(
+        question="Empty sql arg test",
+        db=test_db_session,
+        provider=provider,
+        max_turns=3
+    )
+
+    assert res.success is True
+    assert len(res.tool_calls) == 1
+    assert res.tool_calls[0].result.success is False
+    assert res.tool_calls[0].result.error_type == "MALFORMED_ARGUMENT"
+
+
+def test_max_turns_bounding_clamping(test_db_session):
+    """
+    Verifies max_turns bounds between 1 and 5 (clamping out-of-range values like 0 or 10).
+    """
+    provider = MockLLMProvider()
+
+    res_min = run_investigation_loop(
+        question="Test min turns",
+        db=test_db_session,
+        provider=provider,
+        max_turns=0
+    )
+    assert res_min.metadata["max_turns"] == 1
+
+    res_max = run_investigation_loop(
+        question="Test max turns",
+        db=test_db_session,
+        provider=provider,
+        max_turns=10
+    )
+    assert res_max.metadata["max_turns"] == 5
+
+
+def test_repeated_duplicate_query_protection(test_db_session):
+    """
+    Verifies that a model sending the same duplicate query on every turn reaches turn boundary cleanly
+    without crashing or executing redundant DB queries, and preserves initial evidence.
+    """
+    responses = [
+        ModelResponse(
+            has_tool_call=True,
+            tool_call=ToolCallRequest(
+                tool_name="sql_query",
+                arguments={"sql": "SELECT * FROM customers LIMIT 2"}
+            )
+        ) for _ in range(5)
+    ]
+
+    provider = MockLLMProvider(custom_responses=responses)
+    res = run_investigation_loop(
+        question="Repeated duplicate loop test",
+        db=test_db_session,
+        provider=provider,
+        max_turns=3
+    )
+
+    assert res.success is True
+    assert len(res.tool_calls) == 3
+    assert res.tool_calls[0].result.success is True
+    assert res.tool_calls[1].result.error_type == "DUPLICATE_QUERY"
+    assert res.tool_calls[2].result.error_type == "DUPLICATE_QUERY"
+    assert res.metadata.get("boundary_reached") is True
+    assert len(res.evidence) >= 1
+
+
+def test_ai3_single_valid_evidence_tag(test_db_session):
+    """
+    TEST 1: Single valid evidence tag [ev_fact_1] is extracted, verified, and mapped.
+    """
+    responses = [
+        ModelResponse(
+            has_tool_call=True,
+            tool_call=ToolCallRequest(
+                tool_name="sql_query",
+                arguments={"sql": "SELECT * FROM customers LIMIT 2"}
+            )
+        ),
+        ModelResponse(
+            has_tool_call=False,
+            content="North region generated $1.2M in revenue. [ev_fact_1]"
+        )
+    ]
+    provider = MockLLMProvider(custom_responses=responses)
+    res = run_investigation_loop("Single tag test", test_db_session, provider, max_turns=3)
+
+    assert res.success is True
+    assert len(res.claims) == 1
+    claim = res.claims[0]
+    assert claim.claim_text == "North region generated $1.2M in revenue."
+    assert claim.evidence_ids == ["ev_fact_1"]
+    assert claim.is_supported is True
+    assert claim.evidence_type == EvidenceType.FACT
+    assert "[ev_fact_1]" not in res.answer
+
+
+def test_ai3_multiple_valid_evidence_tags(test_db_session):
+    """
+    TEST 2: Multiple valid evidence tags [ev_fact_1] [ev_derived_1] on a claim.
+    """
+    responses = [
+        ModelResponse(
+            has_tool_call=True,
+            tool_call=ToolCallRequest(
+                tool_name="sql_query",
+                arguments={"sql": "SELECT product_id, unit_price FROM products LIMIT 2"}
+            )
+        ),
+        ModelResponse(
+            has_tool_call=False,
+            content="Product 1 led price comparison. [ev_fact_1] [ev_derived_1]"
+        )
+    ]
+    provider = MockLLMProvider(custom_responses=responses)
+    res = run_investigation_loop("Multiple tags test", test_db_session, provider, max_turns=3)
+
+    assert res.success is True
+    assert len(res.claims) >= 1
+    claim = res.claims[0]
+    assert "ev_fact_1" in claim.evidence_ids
+    assert "ev_derived_1" in claim.evidence_ids
+    assert claim.is_supported is True
+    assert claim.evidence_type == EvidenceType.DERIVED_FACT
+
+
+def test_ai3_unknown_evidence_id_rejected(test_db_session):
+    """
+    TEST 3: Unknown evidence ID [ev_fact_999] is rejected and marked unsupported.
+    """
+    responses = [
+        ModelResponse(
+            has_tool_call=True,
+            tool_call=ToolCallRequest(
+                tool_name="sql_query",
+                arguments={"sql": "SELECT * FROM customers LIMIT 1"}
+            )
+        ),
+        ModelResponse(
+            has_tool_call=False,
+            content="North region generated $1.2M in revenue. [ev_fact_999]"
+        )
+    ]
+    provider = MockLLMProvider(custom_responses=responses)
+    res = run_investigation_loop("Unknown ID test", test_db_session, provider, max_turns=3)
+
+    assert res.success is True
+    assert len(res.claims) == 1
+    claim = res.claims[0]
+    assert "ev_fact_999" not in claim.evidence_ids
+    assert claim.evidence_ids == []
+    assert claim.is_supported is False
+
+
+def test_ai3_mixed_valid_and_invalid_evidence_ids(test_db_session):
+    """
+    TEST 4: Mixed valid + invalid IDs preserves valid ID and filters invalid ID.
+    """
+    responses = [
+        ModelResponse(
+            has_tool_call=True,
+            tool_call=ToolCallRequest(
+                tool_name="sql_query",
+                arguments={"sql": "SELECT * FROM customers LIMIT 1"}
+            )
+        ),
+        ModelResponse(
+            has_tool_call=False,
+            content="North region generated $1.2M in revenue. [ev_fact_1] [ev_fact_999]"
+        )
+    ]
+    provider = MockLLMProvider(custom_responses=responses)
+    res = run_investigation_loop("Mixed IDs test", test_db_session, provider, max_turns=3)
+
+    assert res.success is True
+    assert len(res.claims) == 1
+    claim = res.claims[0]
+    assert claim.evidence_ids == ["ev_fact_1"]
+    assert claim.is_supported is True
+
+
+def test_ai3_claim_with_no_evidence_tag(test_db_session):
+    """
+    TEST 5: Claim with no evidence tag is not falsely marked supported.
+    """
+    responses = [
+        ModelResponse(
+            has_tool_call=True,
+            tool_call=ToolCallRequest(
+                tool_name="sql_query",
+                arguments={"sql": "SELECT * FROM customers LIMIT 1"}
+            )
+        ),
+        ModelResponse(
+            has_tool_call=False,
+            content="North region generated $1.2M. [ev_fact_1] We should expand operations to new markets."
+        )
+    ]
+    provider = MockLLMProvider(custom_responses=responses)
+    res = run_investigation_loop("No tag claim test", test_db_session, provider, max_turns=3)
+
+    assert res.success is True
+    assert len(res.claims) == 2
+    c1, c2 = res.claims[0], res.claims[1]
+    assert c1.is_supported is True
+    assert c1.evidence_ids == ["ev_fact_1"]
+
+    assert c2.evidence_ids == []
+    assert c2.is_supported is False
+
+
+def test_ai3_fact_claim_classification(test_db_session):
+    """
+    TEST 6: FACT claim classification when citing only FACT evidence.
+    """
+    ev_items = [
+        EvidenceItem(evidence_id="ev_fact_1", evidence_type=EvidenceType.FACT, description="Direct DB query")
+    ]
+    answer = "Customer count is 500. [ev_fact_1]"
+    claims, _ = _build_claims_and_evidence(answer, ev_items)
+
+    assert len(claims) == 1
+    assert claims[0].evidence_type == EvidenceType.FACT
+    assert claims[0].is_supported is True
+
+
+def test_ai3_derived_fact_claim_classification(test_db_session):
+    """
+    TEST 7: DERIVED_FACT claim classification when citing DERIVED_FACT evidence.
+    """
+    ev_items = [
+        EvidenceItem(evidence_id="ev_derived_1", evidence_type=EvidenceType.DERIVED_FACT, description="Arithmetic calc")
+    ]
+    answer = "Revenue increased by 18.4%. [ev_derived_1]"
+    claims, _ = _build_claims_and_evidence(answer, ev_items)
+
+    assert len(claims) == 1
+    assert claims[0].evidence_type == EvidenceType.DERIVED_FACT
+    assert claims[0].is_supported is True
+
+
+def test_ai3_inference_claim_classification(test_db_session):
+    """
+    TEST 8: INFERENCE claim classification when citing INFERENCE evidence or qualitative indicator.
+    """
+    ev_items = [
+        EvidenceItem(evidence_id="ev_inf_1", evidence_type=EvidenceType.INFERENCE, description="Qualitative inference")
+    ]
+    answer = "The trend suggests potential growth. [ev_inf_1]"
+    claims, _ = _build_claims_and_evidence(answer, ev_items)
+
+    assert len(claims) == 1
+    assert claims[0].evidence_type == EvidenceType.INFERENCE
+    assert claims[0].is_supported is True
+
+
+def test_ai3_evidence_tags_removed_from_clean_claim_text():
+    """
+    TEST 9: Evidence tags are removed from clean claim text and answer text.
+    """
+    raw_text = "North region generated $1.2M. [ev_fact_1]"
+    clean = _clean_text_tags(raw_text)
+
+    assert clean == "North region generated $1.2M."
+    assert "[ev_fact_1]" not in clean
+
+
+def test_ai3_multiple_claims_with_different_evidence_mappings():
+    """
+    TEST 10: Multiple claims map cleanly to different evidence IDs.
+    """
+    ev_items = [
+        EvidenceItem(evidence_id="ev_fact_1", evidence_type=EvidenceType.FACT, description="North rev"),
+        EvidenceItem(evidence_id="ev_fact_2", evidence_type=EvidenceType.FACT, description="South rev"),
+        EvidenceItem(evidence_id="ev_derived_1", evidence_type=EvidenceType.DERIVED_FACT, description="Growth calc"),
+    ]
+    answer = "North generated $1.2M. [ev_fact_1] South generated $800k. [ev_fact_2] Growth was 50%. [ev_derived_1]"
+    claims, _ = _build_claims_and_evidence(answer, ev_items)
+
+    assert len(claims) == 3
+    assert claims[0].evidence_ids == ["ev_fact_1"]
+    assert claims[0].evidence_type == EvidenceType.FACT
+
+    assert claims[1].evidence_ids == ["ev_fact_2"]
+    assert claims[1].evidence_type == EvidenceType.FACT
+
+    assert claims[2].evidence_ids == ["ev_derived_1"]
+    assert claims[2].evidence_type == EvidenceType.DERIVED_FACT
+
+
+def test_ai3_malformed_evidence_tags_handling():
+    """
+    TEST 11: Malformed evidence tags are ignored/cleaned without crashing.
+    """
+    ev_items = [
+        EvidenceItem(evidence_id="ev_fact_1", evidence_type=EvidenceType.FACT, description="Fact 1")
+    ]
+    answer = "North generated $1.2M. [ev_fact_1 [ev_fact_] [ev_invalid#1] [ev_fact_1]"
+    claims, _ = _build_claims_and_evidence(answer, ev_items)
+
+    assert len(claims) == 1
+    assert claims[0].evidence_ids == ["ev_fact_1"]
+    assert "[" not in claims[0].claim_text
+
+
+def test_ai3_duplicate_evidence_tags_uniquified():
+    """
+    TEST 12: Duplicate evidence tags in a single claim do not create duplicate IDs in evidence_ids.
+    """
+    ev_items = [
+        EvidenceItem(evidence_id="ev_fact_1", evidence_type=EvidenceType.FACT, description="Fact 1")
+    ]
+    answer = "North generated $1.2M. [ev_fact_1] [ev_fact_1]"
+    claims, _ = _build_claims_and_evidence(answer, ev_items)
+
+    assert len(claims) == 1
+    assert claims[0].evidence_ids == ["ev_fact_1"]

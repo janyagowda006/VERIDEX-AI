@@ -46,3 +46,31 @@ class InvestigationDetail(InvestigationSummary):
     error_message: Optional[str] = Field(None, description="Error message if status is FAILED.")
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class InvestigationReassessRequest(BaseModel):
+    """
+    Schema for requesting dynamic robustness re-assessment on an existing investigation.
+    """
+    scenario_shift_pct: float = Field(
+        default=10.0,
+        gt=0.0,
+        le=100.0,
+        description="Percentage shift for metric sensitivity stress testing (e.g. 5, 10, 15, 20, 25, 30)."
+    )
+
+
+class InvestigationReassessResponse(BaseModel):
+    """
+    Schema representing the deterministic robustness re-assessment result.
+    """
+    investigation_id: str = Field(..., description="Target investigation identifier.")
+    question: str = Field(..., description="Original business question.")
+    original_scenario_shift_pct: float = Field(default=10.0, description="Original baseline scenario shift percentage.")
+    requested_scenario_shift_pct: float = Field(..., description="Requested scenario shift percentage.")
+    baseline_top_candidate: Optional[str] = Field(None, description="Baseline top candidate name/region if available.")
+    baseline_metric_name: Optional[str] = Field(None, description="Primary metric column evaluated.")
+    robustness_check: Dict[str, Any] = Field(..., description="Reassessed deterministic RobustnessCheck schema object.")
+    reassessed_at: datetime = Field(..., description="UTC timestamp of re-assessment execution.")
+
+    model_config = ConfigDict(from_attributes=True)

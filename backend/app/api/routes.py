@@ -10,7 +10,12 @@ from app.services.schema_introspection import get_database_schema
 from app.tools.sql_tool import execute_read_only_sql
 from app.schemas.sql_tool import SQLQueryRequest, SQLQueryResult, SchemaContext
 from app.schemas.ai import AskRequest, AskResponse
-from app.schemas.investigation import InvestigationSummary, InvestigationDetail
+from app.schemas.investigation import (
+    InvestigationSummary,
+    InvestigationDetail,
+    InvestigationReassessRequest,
+    InvestigationReassessResponse
+)
 from app.services.investigation_service import InvestigationService
 from app.ai.provider import BaseLLMProvider, get_llm_provider
 from app.ai.orchestrator import run_investigation_loop
@@ -179,3 +184,30 @@ def get_investigation_detail(
     if not record:
         raise HTTPException(status_code=404, detail=f"Investigation with ID '{investigation_id}' not found.")
     return InvestigationDetail.model_validate(record)
+
+
+@router.post("/api/investigations/{investigation_id}/reassess", response_model=InvestigationReassessResponse)
+def reassess_investigation_robustness(
+    investigation_id: str,
+    request: InvestigationReassessRequest = InvestigationReassessRequest(),
+    db: Session = Depends(get_db)
+):
+    """
+    Deterministically re-evaluates multi-scenario metric robustness for an existing investigation
+    using a caller-specified scenario shift percentage.
+    Does NOT invoke the LLM provider or execute database SQL queries.
+    """
+    try:
+        return InvestigationService.reassess_investigation(
+            db=db,
+            investigation_id=investigation_id,
+            scenario_shift_pct=request.scenario_shift_pct
+        )
+    except ValueError as err:
+        err_str = str(err)
+        if "not found" in err_str.lower():
+            raise HTTPException(status_code=404, detail=err_str)
+        else:
+            raise HTTPException(status_code=400, detail=err_str)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Re-assessment execution error: {str(exc)}")

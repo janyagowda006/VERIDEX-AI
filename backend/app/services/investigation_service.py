@@ -174,3 +174,78 @@ class InvestigationService:
         Retrieves a specific Investigation record by investigation_id.
         """
         return db.query(Investigation).filter(Investigation.investigation_id == investigation_id).first()
+
+    @classmethod
+    def reassess_investigation(
+        cls,
+        db: Session,
+        investigation_id: str,
+        scenario_shift_pct: float = 10.0
+    ) -> InvestigationReassessResponse:
+        """
+        Deterministically re-evaluates multi-scenario robustness for an existing persisted investigation
+        using a caller-specified scenario shift percentage.
+        Does NOT invoke the LLM or execute new database SQL queries.
+        """
+        from app.schemas.investigation import InvestigationReassessResponse
+        from app.services.robustness import RobustnessEngine
+        from app.ai.orchestrator import _evaluate_orchestrated_robustness, _is_valid_finite_number
+
+        investigation = cls.get_investigation_by_id(db=db, investigation_id=investigation_id)
+        if not investigation:
+            raise ValueError(f"Investigation with ID '{investigation_id}' not found.")
+
+        if not investigation.result_json:
+            raise ValueError(f"Investigation '{investigation_id}' contains no stored result payload to reassess.")
+
+        try:
+            result_data = json.loads(investigation.result_json)
+            ask_resp = AskResponse.model_validate(result_data)
+        except Exception as err:
+            raise ValueError(f"Failed to parse stored result payload for investigation '{investigation_id}': {str(err)}")
+
+        # Extract last successful query data and evidence items
+        query_data: Optional[List[Dict[str, Any]]] = None
+        if ask_resp.tool_calls:
+            for tc in reversed(ask_resp.tool_calls):
+                if tc.result and tc.result.success and tc.result.data:
+                    query_data = tc.result.data
+                    break
+
+        evidence_items = ask_resp.evidence or []
+        robustness_engine = RobustnessEngine()
+
+        reassessed_check = _evaluate_orchestrated_robustness(
+            robustness_engine=robustness_engine,
+            evidence_items=evidence_items,
+            query_data=query_data,
+            scenario_shift_pct=scenario_shift_pct
+        )
+
+        baseline_top: Optional[str] = None
+        baseline_metric: Optional[str] = None
+
+        if query_data and len(query_data) > 0 and isinstance(query_data[0], dict) and query_data[0]:
+            first_row = query_data[0]
+            key_col = next(
+                (c for c in ["candidate_id", "candidate", "name", "id", "region", "product_name", "customer_name", "category"] if c in first_row),
+                list(first_row.keys())[0] if first_row else ""
+            )
+            baseline_top = str(first_row.get(key_col)) if first_row.get(key_col) is not None else None
+
+            non_key = [c for c in first_row.keys() if c != key_col]
+            for c in non_key:
+                if any(_is_valid_finite_number(r.get(c)) for r in query_data if isinstance(r, dict)):
+                    baseline_metric = c
+                    break
+
+        return InvestigationReassessResponse(
+            investigation_id=investigation.investigation_id,
+            question=investigation.question,
+            original_scenario_shift_pct=10.0,
+            requested_scenario_shift_pct=scenario_shift_pct,
+            baseline_top_candidate=baseline_top,
+            baseline_metric_name=baseline_metric,
+            robustness_check=reassessed_check.model_dump(),
+            reassessed_at=datetime.now(timezone.utc)
+        )

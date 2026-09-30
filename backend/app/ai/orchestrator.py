@@ -77,14 +77,17 @@ def _is_valid_finite_number(val: Any) -> bool:
 def _evaluate_orchestrated_robustness(
     robustness_engine: RobustnessEngine,
     evidence_items: List[EvidenceItem],
-    query_data: Optional[List[Dict[str, Any]]] = None
+    query_data: Optional[List[Dict[str, Any]]] = None,
+    scenario_shift_pct: float = DEFAULT_SCENARIO_SHIFT_PCT
 ) -> RobustnessCheck:
     """
-    Evaluates robustness deterministically across automated multi-scenario stress tests (+/-10% metric shifts)
+    Evaluates robustness deterministically across automated multi-scenario stress tests (+/- scenario_shift_pct)
     when query data contains valid numeric candidate metrics.
     Falls back to baseline single-scenario assessment if query data is non-numeric or empty.
     Never mutates original query_data.
     """
+    shift_val = float(scenario_shift_pct) if _is_valid_finite_number(scenario_shift_pct) and float(scenario_shift_pct) > 0.0 else DEFAULT_SCENARIO_SHIFT_PCT
+
     if not isinstance(query_data, list) or len(query_data) == 0 or not isinstance(query_data[0], dict) or not query_data[0]:
         return robustness_engine.run_robustness_assessment(
             evidence_items=evidence_items,
@@ -114,29 +117,31 @@ def _evaluate_orchestrated_robustness(
         )
 
     # Build deterministic scenario datasets without mutating baseline query_data
-    minus_10_rows: List[Dict[str, Any]] = []
-    plus_10_rows: List[Dict[str, Any]] = []
+    minus_rows: List[Dict[str, Any]] = []
+    plus_rows: List[Dict[str, Any]] = []
 
     for row in query_data:
         r_minus = dict(row)
         r_plus = dict(row)
         if metric_col in row and _is_valid_finite_number(row[metric_col]):
             val = float(row[metric_col])
-            r_minus[metric_col] = round(val * (1.0 - DEFAULT_SCENARIO_SHIFT_PCT / 100.0), 4)
-            r_plus[metric_col] = round(val * (1.0 + DEFAULT_SCENARIO_SHIFT_PCT / 100.0), 4)
-        minus_10_rows.append(r_minus)
-        plus_10_rows.append(r_plus)
+            r_minus[metric_col] = round(val * (1.0 - shift_val / 100.0), 4)
+            r_plus[metric_col] = round(val * (1.0 + shift_val / 100.0), 4)
+        minus_rows.append(r_minus)
+        plus_rows.append(r_plus)
+
+    shift_int = int(shift_val) if shift_val.is_integer() else shift_val
 
     scenarios = [
         {
-            "scenario_name": f"{metric_col}_minus_{int(DEFAULT_SCENARIO_SHIFT_PCT)}_percent",
-            "assumptions": {"metric": metric_col, "shift_pct": -DEFAULT_SCENARIO_SHIFT_PCT},
-            "data": minus_10_rows
+            "scenario_name": f"{metric_col}_minus_{shift_int}_percent",
+            "assumptions": {"metric": metric_col, "shift_pct": -shift_val},
+            "data": minus_rows
         },
         {
-            "scenario_name": f"{metric_col}_plus_{int(DEFAULT_SCENARIO_SHIFT_PCT)}_percent",
-            "assumptions": {"metric": metric_col, "shift_pct": DEFAULT_SCENARIO_SHIFT_PCT},
-            "data": plus_10_rows
+            "scenario_name": f"{metric_col}_plus_{shift_int}_percent",
+            "assumptions": {"metric": metric_col, "shift_pct": shift_val},
+            "data": plus_rows
         }
     ]
 
@@ -147,7 +152,7 @@ def _evaluate_orchestrated_robustness(
         key_col=key_col,
         metric_col=metric_col,
         threshold_pct=5.0,
-        scenario_description="Automated multi-scenario metric shift evaluation"
+        scenario_description=f"Automated multi-scenario metric shift evaluation (+/-{shift_val}%)"
     )
 
 

@@ -4,7 +4,7 @@ import re
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from sqlalchemy import desc, func
 
 from app.models.investigation import Investigation, InvestigationReview, utcnow
 from app.schemas.investigation import (
@@ -12,7 +12,8 @@ from app.schemas.investigation import (
     InvestigationSummary,
     InvestigationDetail,
     InvestigationReviewCreate,
-    InvestigationReviewStatus
+    InvestigationReviewStatus,
+    InvestigationMetricsSummary
 )
 from app.schemas.ai import AskResponse
 from app.services.robustness import ROBUSTNESS_STATUS_SENSITIVE
@@ -327,4 +328,55 @@ class InvestigationService:
             .filter(InvestigationReview.investigation_id == investigation_id)
             .order_by(desc(InvestigationReview.reviewed_at))
             .first()
+        )
+
+    @classmethod
+    def get_metrics_summary(cls, db: Session) -> InvestigationMetricsSummary:
+        """
+        Calculates and returns global aggregate metrics across all persisted investigations and reviews.
+        """
+        total_investigations = db.query(func.count(Investigation.investigation_id)).scalar() or 0
+        total_reviews = db.query(func.count(InvestigationReview.review_id)).scalar() or 0
+
+        status_counts: Dict[str, int] = {
+            "COMPLETED": 0,
+            "REQUIRES_REVIEW": 0,
+            "FAILED": 0,
+            "IN_PROGRESS": 0
+        }
+        status_rows = db.query(Investigation.status, func.count(Investigation.investigation_id)).group_by(Investigation.status).all()
+        for st, count in status_rows:
+            if st:
+                status_counts[st] = count
+
+        review_counts: Dict[str, int] = {
+            "APPROVED": 0,
+            "REJECTED": 0,
+            "FLAGGED": 0
+        }
+        review_rows = db.query(InvestigationReview.review_status, func.count(InvestigationReview.review_id)).group_by(InvestigationReview.review_status).all()
+        for r_st, count in review_rows:
+            if r_st:
+                review_counts[r_st] = count
+
+        robustness_counts: Dict[str, int] = {
+            "STABLE": 0,
+            "SENSITIVE": 0,
+            "INSUFFICIENT_EVIDENCE": 0
+        }
+        rob_rows = db.query(Investigation.robustness_status, func.count(Investigation.investigation_id)).group_by(Investigation.robustness_status).all()
+        for rob_st, count in rob_rows:
+            if rob_st:
+                robustness_counts[rob_st] = count
+
+        avg_ms = db.query(func.avg(Investigation.execution_time_ms)).filter(Investigation.execution_time_ms.isnot(None)).scalar()
+        avg_exec_time = round(float(avg_ms), 2) if avg_ms is not None else None
+
+        return InvestigationMetricsSummary(
+            total_investigations=total_investigations,
+            total_reviews=total_reviews,
+            status_counts=status_counts,
+            review_counts=review_counts,
+            robustness_counts=robustness_counts,
+            average_execution_time_ms=avg_exec_time
         )

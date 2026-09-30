@@ -128,3 +128,28 @@ def test_post_ask_failure_persists_failed_status(client, test_db_session):
         assert persisted is not None
         assert persisted.status == "FAILED"
         assert "Simulated provider API error" in persisted.error_message
+
+
+def test_get_metrics_summary_route(client, test_db_session):
+    """
+    Verifies GET /api/investigations/metrics/summary returns HTTP 200 with summary metrics
+    and confirms route ordering precedence over /{investigation_id}.
+    """
+    # Create an investigation to ensure non-empty metrics
+    client.post("/api/ask", json={"question": "Metrics endpoint test query", "max_turns": 1})
+
+    response = client.get("/api/investigations/metrics/summary")
+    assert response.status_code == 200
+
+    data = response.json()
+    assert "total_investigations" in data
+    assert "total_reviews" in data
+    assert "status_counts" in data
+    assert "review_counts" in data
+    assert "robustness_counts" in data
+    assert "average_execution_time_ms" in data
+
+    assert data["total_investigations"] >= 1
+    assert isinstance(data["status_counts"], dict)
+    assert isinstance(data["review_counts"], dict)
+    assert isinstance(data["robustness_counts"], dict)

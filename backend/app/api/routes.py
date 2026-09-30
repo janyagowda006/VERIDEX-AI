@@ -16,7 +16,8 @@ from app.schemas.investigation import (
     InvestigationReassessRequest,
     InvestigationReassessResponse,
     InvestigationReviewCreate,
-    InvestigationReviewResponse
+    InvestigationReviewResponse,
+    InvestigationMetricsSummary
 )
 from app.services.investigation_service import InvestigationService
 from app.ai.provider import BaseLLMProvider, get_llm_provider
@@ -171,6 +172,17 @@ def list_investigations_history(
     """
     records = InvestigationService.list_investigations(db=db, limit=limit, offset=offset)
     return [InvestigationSummary.model_validate(r) for r in records]
+
+
+@router.get("/api/investigations/metrics/summary", response_model=InvestigationMetricsSummary)
+def get_investigation_metrics_summary(
+    db: Session = Depends(get_db)
+):
+    """
+    Retrieves global investigation metrics summary including investigation counts,
+    human review decision counts, robustness status distribution, and average execution time.
+    """
+    return InvestigationService.get_metrics_summary(db=db)
 
 
 @router.get("/api/investigations/{investigation_id}", response_model=InvestigationDetail)

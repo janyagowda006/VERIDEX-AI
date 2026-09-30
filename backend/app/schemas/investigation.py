@@ -118,3 +118,17 @@ class InvestigationReassessResponse(BaseModel):
     reassessed_at: datetime = Field(..., description="UTC timestamp of re-assessment execution.")
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class InvestigationMetricsSummary(BaseModel):
+    """
+    Schema for global investigation metrics summary analytics.
+    """
+    total_investigations: int = Field(default=0, description="Total persisted investigation count.")
+    total_reviews: int = Field(default=0, description="Total persisted human review count.")
+    status_counts: Dict[str, int] = Field(..., description="Investigation count grouped by status.")
+    review_counts: Dict[str, int] = Field(..., description="Review count grouped by review_status.")
+    robustness_counts: Dict[str, int] = Field(..., description="Investigation count grouped by robustness_status.")
+    average_execution_time_ms: Optional[float] = Field(None, description="Average execution duration in milliseconds.")
+
+    model_config = ConfigDict(from_attributes=True)

@@ -2,7 +2,7 @@ import pytest
 import time
 from unittest.mock import MagicMock
 from app.services.investigation_service import InvestigationService, _sanitize_error_text
-from app.schemas.investigation import InvestigationStatus
+from app.schemas.investigation import InvestigationStatus, InvestigationReviewCreate
 from app.schemas.ai import AskResponse
 from app.schemas.decision import DecisionAnalysis, RobustnessCheck
 from app.services.robustness import (
@@ -233,3 +233,52 @@ def test_transaction_rollback_on_error():
         InvestigationService.create_investigation(mock_db, question="Rollback test")
 
     mock_db.rollback.assert_called_once()
+
+
+def test_get_metrics_summary_aggregation_and_deltas(test_db_session):
+    """
+    Verifies get_metrics_summary correctly aggregates status, reviews, robustness, and execution time deltas.
+    """
+    initial_metrics = InvestigationService.get_metrics_summary(test_db_session)
+    initial_total_inv = initial_metrics.total_investigations
+    initial_total_rev = initial_metrics.total_reviews
+
+    # 1. Create a completed stable investigation with execution time 100ms
+    inv1 = InvestigationService.create_investigation(test_db_session, question="Metrics Delta Q1")
+    rob1 = RobustnessCheck(check_id="r1", status=ROBUSTNESS_STATUS_STABLE, baseline_scenario={"scenario_name": "base"}, explanation="Stable explanation")
+    resp1 = AskResponse(success=True, question="Metrics Delta Q1", answer="A1", claims=[], evidence=[], analysis=DecisionAnalysis(analysis_id="a1", summary="s", robustness=rob1))
+    InvestigationService.update_investigation_success(test_db_session, inv1.investigation_id, resp1, execution_time_ms=100.0)
+
+    # 2. Create a sensitive investigation requiring review with execution time 200ms
+    inv2 = InvestigationService.create_investigation(test_db_session, question="Metrics Delta Q2")
+    rob2 = RobustnessCheck(check_id="r2", status=ROBUSTNESS_STATUS_SENSITIVE, baseline_scenario={"scenario_name": "base"}, explanation="Sensitive explanation")
+    resp2 = AskResponse(success=True, question="Metrics Delta Q2", answer="A2", claims=[], evidence=[], analysis=DecisionAnalysis(analysis_id="a2", summary="s", robustness=rob2))
+    InvestigationService.update_investigation_success(test_db_session, inv2.investigation_id, resp2, execution_time_ms=200.0)
+
+    # Add reviews to inv2
+    rev_data1 = InvestigationReviewCreate(review_status="FLAGGED", reviewer_id="user1", review_notes="Needs check")
+    InvestigationService.create_review(test_db_session, inv2.investigation_id, rev_data1)
+
+    rev_data2 = InvestigationReviewCreate(review_status="APPROVED", reviewer_id="user2", review_notes="Approved now")
+    InvestigationService.create_review(test_db_session, inv2.investigation_id, rev_data2)
+
+    # 3. Create a failed investigation with execution time 300ms
+    inv3 = InvestigationService.create_investigation(test_db_session, question="Metrics Delta Q3")
+    InvestigationService.update_investigation_failure(test_db_session, inv3.investigation_id, "Error", execution_time_ms=300.0)
+
+    # Fetch updated summary
+    updated_metrics = InvestigationService.get_metrics_summary(test_db_session)
+
+    assert updated_metrics.total_investigations == initial_total_inv + 3
+    assert updated_metrics.total_reviews == initial_total_rev + 2
+    assert updated_metrics.status_counts["COMPLETED"] == initial_metrics.status_counts["COMPLETED"] + 1
+    assert updated_metrics.status_counts["REQUIRES_REVIEW"] == initial_metrics.status_counts["REQUIRES_REVIEW"] + 1
+    assert updated_metrics.status_counts["FAILED"] == initial_metrics.status_counts["FAILED"] + 1
+
+    assert updated_metrics.review_counts["APPROVED"] == initial_metrics.review_counts["APPROVED"] + 1
+    assert updated_metrics.review_counts["FLAGGED"] == initial_metrics.review_counts["FLAGGED"] + 1
+
+    assert updated_metrics.robustness_counts["STABLE"] == initial_metrics.robustness_counts["STABLE"] + 1
+    assert updated_metrics.robustness_counts["SENSITIVE"] == initial_metrics.robustness_counts["SENSITIVE"] + 1
+
+    assert updated_metrics.average_execution_time_ms is not None

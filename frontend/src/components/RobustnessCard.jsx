@@ -32,6 +32,55 @@ function ScenarioMetrics({ data, title }) {
   );
 }
 
+function RobustnessStatusMeter({ status }) {
+  const normalized = (status || 'STABLE').toUpperCase();
+
+  const stages = [
+    {
+      id: 'INSUFFICIENT_EVIDENCE',
+      label: 'Insufficient Evidence',
+      desc: 'Lacks verified queries',
+      icon: '○'
+    },
+    {
+      id: 'SENSITIVE',
+      label: 'Sensitive',
+      desc: 'Altered by assumptions',
+      icon: '▲'
+    },
+    {
+      id: 'STABLE',
+      label: 'Stable Finding',
+      desc: 'Invariant to variations',
+      icon: '✓'
+    }
+  ];
+
+  return (
+    <div className="robustness-meter" role="region" aria-label={`Robustness classification meter: ${normalized}`}>
+      <div className="meter-track">
+        {stages.map((stage) => {
+          const isActive = normalized === stage.id;
+          return (
+            <div
+              key={stage.id}
+              className={`meter-step step-${stage.id.toLowerCase()} ${isActive ? 'active' : ''}`}
+            >
+              <div className="meter-node">
+                <span className="meter-icon" aria-hidden="true">{stage.icon}</span>
+              </div>
+              <div className="meter-text">
+                <span className="meter-label">{stage.label}</span>
+                <span className="meter-desc">{stage.desc}</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function RobustnessCard({ robustness, selectedEvidenceId, onSelectEvidence }) {
   if (!robustness) return null;
 
@@ -45,6 +94,9 @@ export function RobustnessCard({ robustness, selectedEvidenceId, onSelectEvidenc
           {status}
         </span>
       </div>
+
+      {/* Visual Robustness Stability Gauge */}
+      <RobustnessStatusMeter status={status} />
 
       <p className="robustness-explanation">{explanation}</p>
 

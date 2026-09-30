@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { askQuestion } from './api/client.js';
 import { QuestionInput } from './components/QuestionInput.jsx';
+import { ExecutiveSummary } from './components/ExecutiveSummary.jsx';
 import { AnswerCard } from './components/AnswerCard.jsx';
 import { EvidencePanel } from './components/EvidencePanel.jsx';
 import { DecisionCard } from './components/DecisionCard.jsx';
@@ -79,6 +80,9 @@ function App() {
 
         {data && !loading && (
           <>
+            {/* Executive Summary & Key KPIs */}
+            <ExecutiveSummary data={data} onSelectEvidence={setSelectedEvidenceId} />
+
             {/* 1. Synthesized Finding & Categorized Claims */}
             <AnswerCard
               answer={data.answer}

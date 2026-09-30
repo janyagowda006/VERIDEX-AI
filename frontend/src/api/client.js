@@ -5,8 +5,122 @@ import {
   getMockInvestigationDetail,
   getMockInvestigationsList,
   getMockAnalyticsSummary,
-  getMockExportData
+  getMockExportData,
+  getMockLoginResponse,
+  getMockMeResponse
 } from '../mocks/mockData.js';
+
+let activeAuthToken = null;
+try {
+  activeAuthToken = localStorage.getItem('veridex_auth_token') || null;
+} catch {
+  // fallback for restricted environments
+}
+
+export function setAuthToken(token) {
+  activeAuthToken = token;
+  try {
+    if (token) {
+      localStorage.setItem('veridex_auth_token', token);
+    } else {
+      localStorage.removeItem('veridex_auth_token');
+    }
+  } catch {
+    // fallback
+  }
+}
+
+export function getAuthToken() {
+  if (!activeAuthToken) {
+    try {
+      activeAuthToken = localStorage.getItem('veridex_auth_token');
+    } catch {
+      // fallback
+    }
+  }
+  return activeAuthToken;
+}
+
+export function getAuthHeaders(extraHeaders = {}) {
+  const headers = {
+    'Content-Type': 'application/json',
+    ...extraHeaders
+  };
+  const token = getAuthToken();
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return headers;
+}
+
+/**
+ * Authenticate user with credentials.
+ * Connects to POST /api/auth/login
+ */
+export async function login(email, password, useMock = false) {
+  if (useMock) {
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        const res = getMockLoginResponse(email);
+        setAuthToken(res.access_token);
+        resolve(res);
+      }, 300);
+    });
+  }
+
+  const response = await fetch('/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password })
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    let detail = errorText;
+    try {
+      const jsonErr = JSON.parse(errorText);
+      if (jsonErr.detail) detail = typeof jsonErr.detail === 'string' ? jsonErr.detail : JSON.stringify(jsonErr.detail);
+    } catch {
+      // fallback
+    }
+    throw new Error(detail || "Authentication failed.");
+  }
+
+  const data = await response.json();
+  if (data.access_token) {
+    setAuthToken(data.access_token);
+  }
+  return data;
+}
+
+/**
+ * Retrieve current authenticated user details.
+ * Connects to GET /api/auth/me
+ */
+export async function getMe(useMock = false, devRole = "ANALYST") {
+  if (useMock) {
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        resolve(getMockMeResponse(devRole));
+      }, 200);
+    });
+  }
+
+  const token = getAuthToken();
+  if (!token) return null;
+
+  const response = await fetch('/api/auth/me', {
+    method: 'GET',
+    headers: getAuthHeaders({ 'Accept': 'application/json' })
+  });
+
+  if (!response.ok) {
+    return null;
+  }
+
+  return await response.json();
+}
+
 
 
 /**
@@ -40,9 +154,7 @@ export async function askQuestion(question, maxTurns = 3, useMock = false, inves
 
   const response = await fetch('/api/ask', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
+    headers: getAuthHeaders(),
     body: JSON.stringify(payload)
   });
 
@@ -86,9 +198,7 @@ export async function reassessInvestigation(investigationId, scenarioShiftPct = 
 
   const response = await fetch(`/api/investigations/${encodeURIComponent(investigationId)}/reassess`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
+    headers: getAuthHeaders(),
     body: JSON.stringify({
       scenario_shift_pct: Number(scenarioShiftPct)
     })
@@ -143,9 +253,7 @@ export async function submitReview(investigationId, reviewStatus, reviewerId, re
 
   const response = await fetch(`/api/investigations/${encodeURIComponent(investigationId)}/review`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
+    headers: getAuthHeaders(),
     body: JSON.stringify({
       review_status: reviewStatus,
       reviewer_id: reviewerId,
@@ -199,9 +307,7 @@ export async function getInvestigationDetail(investigationId, useMock = false) {
 
   const response = await fetch(`/api/investigations/${encodeURIComponent(investigationId)}`, {
     method: 'GET',
-    headers: {
-      'Accept': 'application/json'
-    }
+    headers: getAuthHeaders({ 'Accept': 'application/json' })
   });
 
   if (!response.ok) {
@@ -240,12 +346,13 @@ export async function listInvestigations(
   useMock = false,
   search = null,
   status = null,
-  robustnessStatus = null
+  robustnessStatus = null,
+  ownerId = null
 ) {
   if (useMock) {
     return new Promise((resolve) => {
       setTimeout(() => {
-        resolve(getMockInvestigationsList(limit, offset, search, status, robustnessStatus));
+        resolve(getMockInvestigationsList(limit, offset, search, status, robustnessStatus, ownerId));
       }, 300);
     });
   }
@@ -256,12 +363,11 @@ export async function listInvestigations(
   if (search && search.trim()) params.append('search', search.trim());
   if (status && status.trim()) params.append('status', status.trim());
   if (robustnessStatus && robustnessStatus.trim()) params.append('robustness_status', robustnessStatus.trim());
+  if (ownerId && ownerId.trim()) params.append('owner_id', ownerId.trim());
 
   const response = await fetch(`/api/investigations?${params.toString()}`, {
     method: 'GET',
-    headers: {
-      'Accept': 'application/json'
-    }
+    headers: getAuthHeaders({ 'Accept': 'application/json' })
   });
 
   if (!response.ok) {
@@ -305,9 +411,9 @@ export async function exportInvestigationReport(investigationId, format = 'json'
 
   const response = await fetch(`/api/investigations/${encodeURIComponent(investigationId)}/export?format=${fmt}`, {
     method: 'GET',
-    headers: {
+    headers: getAuthHeaders({
       'Accept': fmt === 'markdown' ? 'text/markdown, text/plain' : 'application/json'
-    }
+    })
   });
 
   if (!response.ok) {
@@ -347,9 +453,7 @@ export async function getAnalyticsSummary(useMock = false) {
 
   const response = await fetch('/api/investigations/metrics/summary', {
     method: 'GET',
-    headers: {
-      'Accept': 'application/json'
-    }
+    headers: getAuthHeaders({ 'Accept': 'application/json' })
   });
 
   if (!response.ok) {

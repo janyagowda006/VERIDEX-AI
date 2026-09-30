@@ -6,10 +6,12 @@ export function HumanReviewPanel({
   investigationStatus = 'COMPLETED',
   latestReview = null,
   reviewCount = 0,
-  useMock = false
+  useMock = false,
+  currentUser = null,
+  ownerId = null
 }) {
   const [reviewStatus, setReviewStatus] = useState('');
-  const [reviewerId, setReviewerId] = useState('');
+  const [reviewerId, setReviewerId] = useState(() => currentUser?.user_id || currentUser?.full_name || '');
   const [reviewNotes, setReviewNotes] = useState('');
 
   const [reviewLoading, setReviewLoading] = useState(false);
@@ -19,12 +21,27 @@ export function HumanReviewPanel({
   const [currentLatestReview, setCurrentLatestReview] = useState(latestReview);
   const [currentReviewCount, setCurrentReviewCount] = useState(reviewCount);
 
+  // Sync reviewerId if currentUser changes
+  React.useEffect(() => {
+    if (currentUser?.user_id) {
+      setReviewerId(currentUser.user_id);
+    }
+  }, [currentUser]);
+
   const isCompletedOrReviewable = investigationStatus !== 'IN_PROGRESS' && investigationStatus !== 'FAILED';
   const isFailed = investigationStatus === 'FAILED';
   const isRequiresReview = investigationStatus === 'REQUIRES_REVIEW';
 
+  const userRole = currentUser?.role || 'ANALYST';
+  const canUserReview = userRole === 'REVIEWER' || userRole === 'ADMIN';
+  const isSelfReview = Boolean(
+    canUserReview && currentUser?.user_id && ownerId && currentUser.user_id === ownerId
+  );
+  const formDisabled = reviewLoading || !canUserReview || isSelfReview;
+
   const handleReviewSubmit = async (e) => {
     e.preventDefault();
+    if (formDisabled) return;
     setReviewError(null);
     setReviewSuccess(null);
 
@@ -98,6 +115,25 @@ export function HumanReviewPanel({
           <span className="alert-icon" aria-hidden="true">⚠️</span>
           <div>
             <strong>Analyst Verification Recommended:</strong> Metric sensitivity test indicated perturbed candidate margin &lt;5.0%. Review evidence and record your decision below.
+          </div>
+        </div>
+      )}
+
+      {/* RBAC Warning Banners */}
+      {!canUserReview && (
+        <div className="review-alert-banner rbac-warning-banner" style={{ backgroundColor: 'var(--bg-card-subtle)', borderColor: 'var(--border-medium)', color: 'var(--text-secondary)' }}>
+          <span className="alert-icon" aria-hidden="true">🔒</span>
+          <div>
+            <strong>Review Privileges Required:</strong> Your role (<code>{userRole}</code>) has read-only access. HITL reviews require <code>REVIEWER</code> or <code>ADMIN</code> role.
+          </div>
+        </div>
+      )}
+
+      {isSelfReview && (
+        <div className="review-alert-banner self-review-banner" style={{ backgroundColor: 'var(--color-warning-bg)', borderColor: 'var(--color-warning-border)', color: 'var(--color-warning-text)' }}>
+          <span className="alert-icon" aria-hidden="true">⚠️</span>
+          <div>
+            <strong>Self-Review Blocked:</strong> Enterprise separation of duties prohibits creators from reviewing their own investigations (Owner: <code>{ownerId}</code>).
           </div>
         </div>
       )}
@@ -203,7 +239,7 @@ export function HumanReviewPanel({
             <button
               type="submit"
               className="submit-review-btn"
-              disabled={reviewLoading || !reviewStatus || !reviewerId.trim()}
+              disabled={formDisabled || !reviewStatus || !reviewerId.trim()}
             >
               {reviewLoading ? (
                 <>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { askQuestion, getInvestigationDetail } from './api/client.js';
+import { askQuestion, getInvestigationDetail, getMe } from './api/client.js';
 import { ThemeToggle } from './components/ThemeToggle.jsx';
 import { QuestionInput } from './components/QuestionInput.jsx';
 import { ConversationThread } from './components/ConversationThread.jsx';
@@ -24,6 +24,26 @@ function App() {
   const [selectedEvidenceId, setSelectedEvidenceId] = useState(null);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isAnalyticsOpen, setIsAnalyticsOpen] = useState(false);
+
+  // Enterprise Auth & RBAC State
+  const [userRole, setUserRole] = useState('ANALYST');
+  const [currentUser, setCurrentUser] = useState({
+    user_id: "usr_analyst_01",
+    email: "analyst@veridex.internal",
+    full_name: "Lead Analyst",
+    role: "ANALYST",
+    is_active: true
+  });
+
+  const handleSwitchRole = async (newRole) => {
+    setUserRole(newRole);
+    try {
+      const u = await getMe(useMock, newRole);
+      if (u) setCurrentUser(u);
+    } catch {
+      // fallback
+    }
+  };
 
   // Theme state: respects localStorage preference, fallback to system preference
   const [theme, setTheme] = useState(() => {
@@ -253,6 +273,32 @@ function App() {
                 {useMock ? 'Mock API Mode' : 'Live API Mode'}
               </span>
             </div>
+            {/* Dev Role Switcher */}
+            <div className="role-switcher-group" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <select
+                className="role-switcher-select"
+                value={userRole}
+                onChange={(e) => handleSwitchRole(e.target.value)}
+                style={{
+                  padding: '0.25rem 0.5rem',
+                  fontSize: '0.8125rem',
+                  borderRadius: '0.375rem',
+                  border: '1px solid var(--border-medium)',
+                  backgroundColor: 'var(--bg-card)',
+                  color: 'var(--text-primary)',
+                  fontWeight: '500'
+                }}
+                aria-label="Switch User Role for Dev Testing"
+              >
+                <option value="ANALYST">Role: ANALYST (Lead Analyst)</option>
+                <option value="REVIEWER">Role: REVIEWER (Senior Reviewer)</option>
+                <option value="AUDITOR">Role: AUDITOR (Compliance Auditor)</option>
+                <option value="ADMIN">Role: ADMIN (System Admin)</option>
+              </select>
+              <span className="user-role-badge" style={{ fontSize: '0.75rem', fontWeight: '600', padding: '0.2rem 0.4rem', borderRadius: '0.25rem', backgroundColor: 'var(--bg-card-subtle)', color: 'var(--text-secondary)', border: '1px solid var(--border-light)' }}>
+                👤 {currentUser?.full_name || userRole}
+              </span>
+            </div>
             <ThemeToggle theme={theme} onToggle={handleToggleTheme} />
           </div>
         </div>
@@ -306,7 +352,7 @@ function App() {
         {data && !loading && (
           <div className="investigation-flow">
             {/* Executive Summary & Key KPIs */}
-            <ExecutiveSummary data={data} onSelectEvidence={setSelectedEvidenceId} useMock={useMock} />
+            <ExecutiveSummary data={data} onSelectEvidence={setSelectedEvidenceId} useMock={useMock} currentUser={currentUser} />
 
 
             {/* 1. Synthesized Finding & Categorized Claims */}
@@ -355,6 +401,8 @@ function App() {
                 latestReview={data?.latest_review || null}
                 reviewCount={data?.review_count || 0}
                 useMock={useMock}
+                currentUser={currentUser}
+                ownerId={data?.owner_id || data?.metadata?.owner_id || "usr_analyst_01"}
               />
             </section>
 
@@ -384,6 +432,7 @@ function App() {
         onClose={() => setIsHistoryOpen(false)}
         onSelectInvestigation={handleSelectHistoricalInvestigation}
         useMock={useMock}
+        currentUser={currentUser}
       />
 
       <GlobalAnalyticsPanel

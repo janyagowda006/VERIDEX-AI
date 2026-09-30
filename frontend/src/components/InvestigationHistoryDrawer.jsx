@@ -5,7 +5,8 @@ export function InvestigationHistoryDrawer({
   isOpen,
   onClose,
   onSelectInvestigation,
-  useMock = false
+  useMock = false,
+  currentUser = null
 }) {
   const [historyItems, setHistoryItems] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -13,13 +14,16 @@ export function InvestigationHistoryDrawer({
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [robustnessFilter, setRobustnessFilter] = useState('');
+  const [mineOnly, setMineOnly] = useState(false);
 
   const loadHistory = useCallback(() => {
     let isMounted = true;
     setHistoryLoading(true);
     setHistoryError(null);
 
-    listInvestigations(20, 0, useMock, searchTerm, statusFilter, robustnessFilter)
+    const ownerIdParam = mineOnly && currentUser?.user_id ? currentUser.user_id : null;
+
+    listInvestigations(20, 0, useMock, searchTerm, statusFilter, robustnessFilter, ownerIdParam)
       .then((items) => {
         if (isMounted) {
           setHistoryItems(items || []);
@@ -39,7 +43,7 @@ export function InvestigationHistoryDrawer({
     return () => {
       isMounted = false;
     };
-  }, [useMock, searchTerm, statusFilter, robustnessFilter]);
+  }, [useMock, searchTerm, statusFilter, robustnessFilter, mineOnly, currentUser]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -50,11 +54,12 @@ export function InvestigationHistoryDrawer({
     setSearchTerm('');
     setStatusFilter('');
     setRobustnessFilter('');
+    setMineOnly(false);
   };
 
   if (!isOpen) return null;
 
-  const hasActiveFilters = Boolean(searchTerm || statusFilter || robustnessFilter);
+  const hasActiveFilters = Boolean(searchTerm || statusFilter || robustnessFilter || mineOnly);
 
   return (
     <div className="history-drawer-overlay" onClick={onClose} role="dialog" aria-modal="true" aria-label="Investigation History Drawer">
@@ -126,6 +131,16 @@ export function InvestigationHistoryDrawer({
                 <option value="SENSITIVE">SENSITIVE</option>
                 <option value="INSUFFICIENT_EVIDENCE">INSUFFICIENT_EVIDENCE</option>
               </select>
+
+              <button
+                type="button"
+                className={`filter-toggle-btn ${mineOnly ? 'active' : ''}`}
+                onClick={() => setMineOnly((prev) => !prev)}
+                title="Filter to investigations created by current user"
+                aria-label="Toggle My Investigations filter"
+              >
+                👤 My Investigations
+              </button>
 
               {hasActiveFilters && (
                 <button

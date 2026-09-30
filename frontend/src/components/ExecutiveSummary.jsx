@@ -5,11 +5,14 @@ import { exportInvestigationReport } from '../api/client.js';
  * Compact Executive Summary displaying high-level decision intelligence KPIs and audit report export.
  * Uses strictly existing response fields: claims, evidence, criteria, rankings, robustness.
  */
-export function ExecutiveSummary({ data, onSelectEvidence, useMock = false }) {
+export function ExecutiveSummary({ data, onSelectEvidence, useMock = false, currentUser = null }) {
   const [exportLoading, setExportLoading] = useState(false);
   const [exportError, setExportError] = useState(null);
 
   if (!data) return null;
+
+  const userRole = currentUser?.role || 'ANALYST';
+  const canExport = ['REVIEWER', 'AUDITOR', 'ADMIN'].includes(userRole);
 
   const { claims = [], evidence = [], analysis, metadata = {} } = data;
   const investigationId = metadata.investigation_id || data.investigation_id || "inv_mock_123456";
@@ -23,6 +26,7 @@ export function ExecutiveSummary({ data, onSelectEvidence, useMock = false }) {
   const inferenceCount = claims.filter((c) => (c.evidence_type || '').toUpperCase() === 'INFERENCE').length;
 
   const handleExport = async (format) => {
+    if (!canExport) return;
     setExportLoading(true);
     setExportError(null);
 
@@ -69,7 +73,8 @@ export function ExecutiveSummary({ data, onSelectEvidence, useMock = false }) {
             type="button"
             className="btn-export-report"
             onClick={() => handleExport('json')}
-            disabled={exportLoading}
+            disabled={exportLoading || !canExport}
+            title={!canExport ? "Export requires REVIEWER, AUDITOR, or ADMIN role" : "Export JSON Report"}
             aria-label="Export audit report in JSON format"
           >
             📥 JSON
@@ -78,7 +83,8 @@ export function ExecutiveSummary({ data, onSelectEvidence, useMock = false }) {
             type="button"
             className="btn-export-report"
             onClick={() => handleExport('markdown')}
-            disabled={exportLoading}
+            disabled={exportLoading || !canExport}
+            title={!canExport ? "Export requires REVIEWER, AUDITOR, or ADMIN role" : "Export Markdown Report"}
             aria-label="Export audit report in Markdown format"
           >
             📄 Markdown

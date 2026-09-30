@@ -30,8 +30,11 @@ class Investigation(Base):
     result_json = Column(Text, nullable=True)
     error_message = Column(Text, nullable=True)
 
+    owner_id = Column(String(36), ForeignKey("users.user_id"), nullable=True, index=True)
+
     reviews = relationship("InvestigationReview", back_populates="investigation", cascade="all, delete-orphan", order_by="desc(InvestigationReview.reviewed_at)")
     turns = relationship("InvestigationTurn", back_populates="investigation", cascade="all, delete-orphan", order_by="InvestigationTurn.turn_number.asc()")
+    owner = relationship("User", back_populates="investigations", foreign_keys=[owner_id])
 
 
 class InvestigationReview(Base):
@@ -49,6 +52,7 @@ class InvestigationReview(Base):
     reviewed_at = Column(DateTime(timezone=True), nullable=False, index=True, default=utcnow)
 
     investigation = relationship("Investigation", back_populates="reviews")
+    reviewer = relationship("User", primaryjoin="foreign(InvestigationReview.reviewer_id)==User.user_id")
 
 
 class InvestigationTurn(Base):

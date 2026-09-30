@@ -48,17 +48,19 @@ class InvestigationService:
         cls,
         db: Session,
         question: str,
-        investigation_id: Optional[str] = None
+        investigation_id: Optional[str] = None,
+        owner_id: Optional[str] = None
     ) -> Investigation:
         """
-        Creates and persists a new Investigation record in IN_PROGRESS state.
+        Creates and persists a new Investigation record in IN_PROGRESS state with an owner_id.
         """
         inv_id = investigation_id or cls.generate_investigation_id()
         investigation = Investigation(
             investigation_id=inv_id,
             question=question,
             status=InvestigationStatus.IN_PROGRESS.value,
-            created_at=utcnow()
+            created_at=utcnow(),
+            owner_id=owner_id
         )
         try:
             db.add(investigation)
@@ -158,13 +160,17 @@ class InvestigationService:
         offset: int = 0,
         search: Optional[str] = None,
         status: Optional[str] = None,
-        robustness_status: Optional[str] = None
+        robustness_status: Optional[str] = None,
+        owner_id: Optional[str] = None
     ) -> List[Investigation]:
         """
         Retrieves lightweight Investigation summary records ordered by created_at DESC
-        with optional search, status, and robustness_status filtering.
+        with optional search, status, robustness_status, and owner_id filtering.
         """
         query = db.query(Investigation)
+
+        if owner_id:
+            query = query.filter(Investigation.owner_id == owner_id)
 
         if search and search.strip():
             term = f"%{search.strip()}%"
@@ -288,12 +294,12 @@ class InvestigationService:
         cls,
         db: Session,
         investigation_id: str,
-        review_data: InvestigationReviewCreate
+        review_data: InvestigationReviewCreate,
+        reviewer_user_id: Optional[str] = None
     ) -> InvestigationReview:
         """
         Creates and persists a new append-only Human-in-the-Loop review record for an investigation.
-        Does NOT invoke the LLM or execute analytical SQL queries.
-        Does NOT mutate original investigation result_json or robustness findings.
+        Enforces self-review prevention guard and verified reviewer identity.
         """
         investigation = cls.get_investigation_by_id(db=db, investigation_id=investigation_id)
         if not investigation:
@@ -302,14 +308,23 @@ class InvestigationService:
         if investigation.status == InvestigationStatus.IN_PROGRESS.value:
             raise ValueError(f"Cannot submit review for investigation '{investigation_id}' while status is IN_PROGRESS.")
 
+        final_reviewer_id = reviewer_user_id or review_data.reviewer_id
+        if not final_reviewer_id or not final_reviewer_id.strip():
+            raise ValueError("Reviewer identity required to submit review.")
+
+        final_reviewer_id = final_reviewer_id.strip()
+
+        # Self-review check
+        if investigation.owner_id and investigation.owner_id == final_reviewer_id:
+            raise ValueError("Self-Review Blocked: You cannot review an investigation you initiated.")
+
         status_str = review_data.review_status.value if hasattr(review_data.review_status, "value") else str(review_data.review_status)
-        reviewer_id_str = review_data.reviewer_id.strip()
 
         review = InvestigationReview(
             review_id=cls.generate_review_id(),
             investigation_id=investigation_id,
             review_status=status_str,
-            reviewer_id=reviewer_id_str,
+            reviewer_id=final_reviewer_id,
             review_notes=review_data.review_notes,
             reviewed_at=utcnow()
         )

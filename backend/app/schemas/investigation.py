@@ -40,6 +40,7 @@ class InvestigationSummary(BaseModel):
     evidence_count: int = Field(default=0, description="Total evidence items collected.")
     claims_count: int = Field(default=0, description="Total claims generated.")
     robustness_status: Optional[str] = Field(None, description="Robustness evaluation (STABLE, SENSITIVE, INSUFFICIENT_EVIDENCE).")
+    owner_id: Optional[str] = Field(None, description="Owner user identifier.")
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -49,12 +50,14 @@ class InvestigationReviewCreate(BaseModel):
     Schema for submitting a Human-in-the-Loop review for an investigation.
     """
     review_status: InvestigationReviewStatus = Field(..., description="Review decision (APPROVED, REJECTED, FLAGGED).")
-    reviewer_id: str = Field(..., description="Identity of human reviewer (1 to 64 chars).")
+    reviewer_id: Optional[str] = Field(None, description="Identity of human reviewer (populated by server if omitted).")
     review_notes: Optional[str] = Field(None, max_length=2000, description="Optional reviewer notes or rationale (up to 2000 chars).")
 
     @field_validator("reviewer_id")
     @classmethod
-    def validate_reviewer_id(cls, v: str) -> str:
+    def validate_reviewer_id(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
         if not isinstance(v, str):
             raise ValueError("reviewer_id must be a string.")
         s = v.strip()

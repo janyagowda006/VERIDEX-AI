@@ -1,3 +1,47 @@
+export const MOCK_USERS = [
+  {
+    user_id: "usr_analyst_01",
+    email: "analyst@veridex.internal",
+    full_name: "Lead Analyst",
+    role: "ANALYST",
+    is_active: true
+  },
+  {
+    user_id: "usr_reviewer_01",
+    email: "reviewer@veridex.internal",
+    full_name: "Senior Reviewer",
+    role: "REVIEWER",
+    is_active: true
+  },
+  {
+    user_id: "usr_auditor_01",
+    email: "auditor@veridex.internal",
+    full_name: "Compliance Auditor",
+    role: "AUDITOR",
+    is_active: true
+  },
+  {
+    user_id: "usr_admin_01",
+    email: "admin@veridex.internal",
+    full_name: "System Admin",
+    role: "ADMIN",
+    is_active: true
+  }
+];
+
+export function getMockLoginResponse(email) {
+  const user = MOCK_USERS.find((u) => u.email === email) || MOCK_USERS[0];
+  return {
+    access_token: `mock_jwt_token_${user.user_id}`,
+    token_type: "bearer",
+    user: user
+  };
+}
+
+export function getMockMeResponse(roleOrUserId = "usr_analyst_01") {
+  return MOCK_USERS.find((u) => u.user_id === roleOrUserId || u.role === roleOrUserId) || MOCK_USERS[0];
+}
+
 /**
  * Deterministic mock AskResponse payload matching the exact frozen backend JSON contract from:
  * - backend/app/schemas/ai.py
@@ -397,7 +441,8 @@ export function getMockInvestigationsList(
   offset = 0,
   search = null,
   status = null,
-  robustnessStatus = null
+  robustnessStatus = null,
+  ownerId = null
 ) {
   let items = [
     {
@@ -469,6 +514,11 @@ export function getMockInvestigationsList(
   if (robustnessStatus && robustnessStatus.trim()) {
     const rst = robustnessStatus.trim().toUpperCase();
     items = items.filter((item) => (item.robustness_status || "").toUpperCase() === rst);
+  }
+
+  if (ownerId && ownerId.trim()) {
+    const oid = ownerId.trim();
+    items = items.filter((item) => item.owner_id === oid || !item.owner_id);
   }
 
   return items.slice(offset, offset + limit);

@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     """
     PROJECT_NAME: str = "VERIDEX-AI"
     PORT: int = 8000
-    DATABASE_URL: Optional[str] = "postgresql+psycopg2://veridex:veridex_pass@localhost:5432/veridex_db"
+    DATABASE_URL: Optional[str] = "sqlite:///./veridex.db"
     LLM_PROVIDER: str = "gemini"  # "gemini" or "mock"
     LLM_API_KEY: Optional[str] = None
     LLM_MODEL: Optional[str] = "gemini-2.5-flash"

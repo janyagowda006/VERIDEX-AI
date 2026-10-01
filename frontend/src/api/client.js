@@ -7,8 +7,11 @@ import {
   getMockAnalyticsSummary,
   getMockExportData,
   getMockLoginResponse,
-  getMockMeResponse
+  getMockMeResponse,
+  getMockSqlSchema,
+  getMockAuditLogs
 } from '../mocks/mockData.js';
+
 
 let activeAuthToken = null;
 try {
@@ -468,5 +471,62 @@ export async function getAnalyticsSummary(useMock = false) {
     throw new Error(detail || "Failed to retrieve global analytics summary.");
   }
 
+  return await response.json();
+}
+
+/**
+ * Retrieves database schema context from GET /api/tools/sql-schema.
+ */
+export async function getSqlSchema(useMock = false) {
+  if (useMock) {
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        resolve(getMockSqlSchema());
+      }, 300);
+    });
+  }
+
+  const response = await fetch('/api/tools/sql-schema', {
+    method: 'GET',
+    headers: getAuthHeaders({ 'Accept': 'application/json' })
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to retrieve SQL schema context.");
+  }
+  return await response.json();
+}
+
+/**
+ * Retrieves enterprise security audit log entries from GET /api/v1/audit/logs.
+ * Restricted to AUDITOR and ADMIN roles.
+ */
+export async function listAuditLogs(useMock = false, user_id = null, action_type = null, status = null, limit = 50, offset = 0) {
+  if (useMock) {
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        resolve(getMockAuditLogs());
+      }, 300);
+    });
+  }
+
+  const params = new URLSearchParams();
+  params.append('limit', String(limit));
+  params.append('offset', String(offset));
+  if (user_id) params.append('user_id', user_id);
+  if (action_type) params.append('action_type', action_type);
+  if (status) params.append('status', status);
+
+  const response = await fetch(`/api/v1/audit/logs?${params.toString()}`, {
+    method: 'GET',
+    headers: getAuthHeaders({ 'Accept': 'application/json' })
+  });
+
+  if (!response.ok) {
+    if (response.status === 403) {
+      throw new Error("Access Forbidden: Audit Log access requires AUDITOR or ADMIN role.");
+    }
+    throw new Error("Failed to retrieve security audit logs.");
+  }
   return await response.json();
 }

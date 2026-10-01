@@ -605,3 +605,102 @@ export function getMockAnalyticsSummary() {
     average_execution_time_ms: 15.42
   };
 }
+
+/**
+ * Deterministic mock response for database schema context.
+ * Matches backend SchemaContext schema.
+ */
+export function getMockSqlSchema() {
+  return {
+    tables: [
+      {
+        name: "customers",
+        columns: [
+          { name: "customer_id", type: "VARCHAR(36)", nullable: false, primary_key: true },
+          { name: "customer_name", type: "VARCHAR(128)", nullable: false, primary_key: false },
+          { name: "region", type: "VARCHAR(64)", nullable: false, primary_key: false },
+          { name: "email", type: "VARCHAR(128)", nullable: true, primary_key: false }
+        ],
+        foreign_keys: []
+      },
+      {
+        name: "products",
+        columns: [
+          { name: "product_id", type: "VARCHAR(36)", nullable: false, primary_key: true },
+          { name: "product_name", type: "VARCHAR(128)", nullable: false, primary_key: false },
+          { name: "category", type: "VARCHAR(64)", nullable: false, primary_key: false },
+          { name: "unit_price", type: "NUMERIC(10,2)", nullable: false, primary_key: false }
+        ],
+        foreign_keys: []
+      },
+      {
+        name: "orders",
+        columns: [
+          { name: "order_id", type: "VARCHAR(36)", nullable: false, primary_key: true },
+          { name: "customer_id", type: "VARCHAR(36)", nullable: false, primary_key: false },
+          { name: "order_status", type: "VARCHAR(32)", nullable: false, primary_key: false },
+          { name: "order_date", type: "TIMESTAMP", nullable: false, primary_key: false }
+        ],
+        foreign_keys: [
+          { constrained_columns: ["customer_id"], referred_table: "customers", referred_columns: ["customer_id"] }
+        ]
+      },
+      {
+        name: "order_items",
+        columns: [
+          { name: "order_item_id", type: "VARCHAR(36)", nullable: false, primary_key: true },
+          { name: "order_id", type: "VARCHAR(36)", nullable: false, primary_key: false },
+          { name: "product_id", type: "VARCHAR(36)", nullable: false, primary_key: false },
+          { name: "quantity", type: "INTEGER", nullable: false, primary_key: false },
+          { name: "unit_price", type: "NUMERIC(10,2)", nullable: false, primary_key: false }
+        ],
+        foreign_keys: [
+          { constrained_columns: ["order_id"], referred_table: "orders", referred_columns: ["order_id"] },
+          { constrained_columns: ["product_id"], referred_table: "products", referred_columns: ["product_id"] }
+        ]
+      }
+    ]
+  };
+}
+
+/**
+ * Deterministic mock response for security audit logs.
+ * Matches backend AuditLogResponse schema.
+ */
+export function getMockAuditLogs() {
+  return [
+    {
+      id: "audit_101",
+      timestamp: new Date(Date.now() - 3600000).toISOString(),
+      user_id: "usr_auditor_01",
+      user_role: "AUDITOR",
+      action_type: "EXPORT_REPORT",
+      resource_id: "inv_mock_123456",
+      status: "SUCCESS",
+      ip_address: "127.0.0.1",
+      details: "Format: json"
+    },
+    {
+      id: "audit_102",
+      timestamp: new Date(Date.now() - 7200000).toISOString(),
+      user_id: "usr_reviewer_01",
+      user_role: "REVIEWER",
+      action_type: "REVIEW_APPROVE",
+      resource_id: "inv_mock_123456",
+      status: "SUCCESS",
+      ip_address: "127.0.0.1",
+      details: "Decision: APPROVED"
+    },
+    {
+      id: "audit_103",
+      timestamp: new Date(Date.now() - 14400000).toISOString(),
+      user_id: "usr_analyst_01",
+      user_role: "ANALYST",
+      action_type: "LOGIN_SUCCESS",
+      resource_id: "usr_analyst_01",
+      status: "SUCCESS",
+      ip_address: "127.0.0.1",
+      details: null
+    }
+  ];
+}

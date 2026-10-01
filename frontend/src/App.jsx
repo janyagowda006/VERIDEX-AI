@@ -11,6 +11,14 @@ import { RobustnessCard } from './components/RobustnessCard.jsx';
 import { HumanReviewPanel } from './components/HumanReviewPanel.jsx';
 import { InvestigationHistoryDrawer } from './components/InvestigationHistoryDrawer.jsx';
 import { GlobalAnalyticsPanel } from './components/GlobalAnalyticsPanel.jsx';
+import { Sidebar } from './components/Sidebar.jsx';
+import { OverviewView } from './components/views/OverviewView.jsx';
+import { DataSourcesView } from './components/views/DataSourcesView.jsx';
+import { SettingsView } from './components/views/SettingsView.jsx';
+import { HistoryView } from './components/views/HistoryView.jsx';
+import { AuditTrailView } from './components/views/AuditTrailView.jsx';
+import { EvidenceExplorerView } from './components/views/EvidenceExplorerView.jsx';
+import { DecisionsView } from './components/views/DecisionsView.jsx';
 import './App.css';
 
 function App() {
@@ -24,6 +32,10 @@ function App() {
   const [selectedEvidenceId, setSelectedEvidenceId] = useState(null);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isAnalyticsOpen, setIsAnalyticsOpen] = useState(false);
+
+  // Prototype Multi-View & Sidebar Navigation State
+  const [activeView, setActiveView] = useState('workspace');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   // Enterprise Auth & RBAC State
   const [userRole, setUserRole] = useState('ANALYST');
@@ -79,6 +91,7 @@ function App() {
     setData(null);
     setError(null);
     setSelectedEvidenceId(null);
+    setActiveView('workspace');
   };
 
   const handleRunInvestigation = async (question, forceMock = useMock, isNewInvestigation = false) => {
@@ -132,7 +145,6 @@ function App() {
     handleRunInvestigation("What is our gross revenue by region?", true, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
 
   const handleSelectHistoricalInvestigation = async (invId) => {
     setSelectedEvidenceId(null);
@@ -206,6 +218,7 @@ function App() {
       setActiveInvestigationId(detail.investigation_id);
       setActiveTurnNumber(turnItems[turnItems.length - 1].turn_number);
       setData(combinedData);
+      setActiveView('workspace');
     } catch (err) {
       setError(err.message || "Failed to load historical investigation details.");
     } finally {
@@ -224,7 +237,7 @@ function App() {
   };
 
   return (
-    <div className="container">
+    <div className="container app-shell">
       <header className="header" role="banner">
         <div className="header-top">
           <div className="brand-group">
@@ -264,7 +277,7 @@ function App() {
               aria-label="Open investigation history drawer"
             >
               <span className="btn-icon" aria-hidden="true">📜</span>
-              History
+              History Drawer
             </button>
             <div className="header-badges">
               <span className="badge badge-platform">AI Build Challenge 2026</span>
@@ -304,127 +317,185 @@ function App() {
         </div>
       </header>
 
-      <main className="content" role="main">
-        {/* Persistent Multi-Turn Conversation Thread Timeline */}
-        <ConversationThread
-          turns={turns}
-          activeTurnNumber={activeTurnNumber}
-          onSelectTurn={handleSelectTurn}
-          activeInvestigationId={activeInvestigationId}
-          onNewInvestigation={handleStartNewInvestigation}
-          loading={loading}
+      {/* Main Layout Grid with Sidebar Navigation */}
+      <div className="app-body-layout" style={{ display: 'flex', gap: '1.25rem', width: '100%', alignItems: 'flex-start' }}>
+        <Sidebar
+          activeView={activeView}
+          setActiveView={setActiveView}
+          collapsed={sidebarCollapsed}
+          setCollapsed={setSidebarCollapsed}
+          userRole={userRole}
         />
 
-        {/* Business Data Question & Follow-Up Input */}
-        <QuestionInput
-          onSubmit={(q) => handleRunInvestigation(q, useMock, false)}
-          loading={loading}
-          useMock={useMock}
-          onToggleMock={(val) => {
-            setUseMock(val);
-            handleRunInvestigation(data?.question || "What is our gross revenue by region?", val, true);
-          }}
-          activeInvestigationId={activeInvestigationId}
-          turnCount={turns.length}
-          onStartNew={handleStartNewInvestigation}
-        />
+        <main className="content main-view-content" role="main" style={{ flex: 1, minWidth: 0 }}>
+          {/* Active View Renderer */}
+          {activeView === 'overview' && (
+            <OverviewView useMock={useMock} currentUser={currentUser} />
+          )}
 
-        {error && (
-          <div className="card error-card" role="alert" aria-live="assertive">
-            <div className="error-icon" aria-hidden="true">⚠️</div>
-            <div className="error-body">
-              <h2>Investigation Notice</h2>
-              <p className="error-text">{error}</p>
-            </div>
-          </div>
-        )}
+          {activeView === 'datasources' && (
+            <DataSourcesView useMock={useMock} currentUser={currentUser} />
+          )}
 
-        {loading && (
-          <div className="card loading-card" role="status" aria-live="polite">
-            <div className="spinner" aria-hidden="true"></div>
-            <div className="loading-content">
-              <h3>Executing Investigation Pipeline</h3>
-              <p>Executing safe read-only SQL queries, evaluating deterministic calculations, and assembling evidence...</p>
-            </div>
-          </div>
-        )}
+          {activeView === 'settings' && (
+            <SettingsView
+              theme={theme}
+              onToggleTheme={handleToggleTheme}
+              useMock={useMock}
+              onToggleMock={setUseMock}
+              userRole={userRole}
+              onSwitchRole={handleSwitchRole}
+              currentUser={currentUser}
+            />
+          )}
 
-        {data && !loading && (
-          <div className="investigation-flow">
-            {/* Executive Summary & Key KPIs */}
-            <ExecutiveSummary data={data} onSelectEvidence={setSelectedEvidenceId} useMock={useMock} currentUser={currentUser} />
+          {activeView === 'history' && (
+            <HistoryView
+              onSelectInvestigation={(invId) => {
+                handleSelectHistoricalInvestigation(invId);
+                setActiveView('workspace');
+              }}
+              useMock={useMock}
+              currentUser={currentUser}
+            />
+          )}
 
+          {activeView === 'audit' && (
+            <AuditTrailView useMock={useMock} currentUser={currentUser} />
+          )}
 
-            {/* 1. Synthesized Finding & Categorized Claims */}
-            <section className="investigation-step" aria-label="Step 1: Synthesized Finding and Claims">
-              <AnswerCard
-                answer={data.answer}
-                claims={data.claims || []}
-                selectedEvidenceId={selectedEvidenceId}
-                onSelectEvidence={setSelectedEvidenceId}
+          {activeView === 'evidence' && (
+            <EvidenceExplorerView data={data} useMock={useMock} currentUser={currentUser} />
+          )}
+
+          {activeView === 'decisions' && (
+            <DecisionsView data={data} useMock={useMock} currentUser={currentUser} />
+          )}
+
+          {activeView === 'workspace' && (
+            <>
+              {/* Persistent Multi-Turn Conversation Thread Timeline */}
+              <ConversationThread
+                turns={turns}
+                activeTurnNumber={activeTurnNumber}
+                onSelectTurn={handleSelectTurn}
+                activeInvestigationId={activeInvestigationId}
+                onNewInvestigation={handleStartNewInvestigation}
+                loading={loading}
               />
-            </section>
 
-            {/* 2. Evidence & SQL Provenance Trace */}
-            <section className="investigation-step" aria-label="Step 2: Evidence and Provenance Trace">
-              <EvidencePanel
-                evidence={data.evidence || []}
-                toolCalls={data.tool_calls || []}
-                claims={data.claims || []}
-                criteria={data.analysis?.criteria_evaluated || []}
-                recommendation={data.analysis?.recommendation || null}
-                selectedEvidenceId={selectedEvidenceId}
-                onSelectEvidence={setSelectedEvidenceId}
-              />
-            </section>
-
-            {/* 3. Actionable Decision Recommendation */}
-            {data.analysis && (
-              <section className="investigation-step" aria-label="Step 3: Actionable Decision Recommendation">
-                <DecisionCard
-                  analysis={data.analysis}
-                  selectedEvidenceId={selectedEvidenceId}
-                  onSelectEvidence={setSelectedEvidenceId}
-                />
-              </section>
-            )}
-
-            {/* 4. Human-in-the-Loop Audit & Review */}
-            <section className="investigation-step" aria-label="Step 4: Human-in-the-Loop Audit & Review">
-              <HumanReviewPanel
-                key={data?.metadata?.investigation_id || "inv_mock_123456"}
-                investigationId={data?.metadata?.investigation_id || "inv_mock_123456"}
-                investigationStatus={
-                  data?.status || (
-                    data?.metadata?.robustness_status === 'SENSITIVE' || data?.analysis?.robustness?.status === 'SENSITIVE'
-                      ? 'REQUIRES_REVIEW'
-                      : 'COMPLETED'
-                  )
-                }
-                latestReview={data?.latest_review || null}
-                reviewCount={data?.review_count || 0}
+              {/* Business Data Question & Follow-Up Input */}
+              <QuestionInput
+                onSubmit={(q) => handleRunInvestigation(q, useMock, false)}
+                loading={loading}
                 useMock={useMock}
-                currentUser={currentUser}
-                ownerId={data?.owner_id || data?.metadata?.owner_id || "usr_analyst_01"}
+                onToggleMock={(val) => {
+                  setUseMock(val);
+                  handleRunInvestigation(data?.question || "What is our gross revenue by region?", val, true);
+                }}
+                activeInvestigationId={activeInvestigationId}
+                turnCount={turns.length}
+                onStartNew={handleStartNewInvestigation}
               />
-            </section>
 
-            {/* 5. Robustness Assessment */}
-            {data.analysis?.robustness && (
-              <section className="investigation-step" aria-label="Step 5: Robustness Assessment">
-                <RobustnessCard
-                  key={data?.metadata?.investigation_id || "inv_mock_123456"}
-                  robustness={data.analysis.robustness}
-                  investigationId={data?.metadata?.investigation_id || "inv_mock_123456"}
-                  selectedEvidenceId={selectedEvidenceId}
-                  onSelectEvidence={setSelectedEvidenceId}
-                  useMock={useMock}
-                />
-              </section>
-            )}
-          </div>
-        )}
-      </main>
+              {error && (
+                <div className="card error-card" role="alert" aria-live="assertive">
+                  <div className="error-icon" aria-hidden="true">⚠️</div>
+                  <div className="error-body">
+                    <h2>Investigation Notice</h2>
+                    <p className="error-text">{error}</p>
+                  </div>
+                </div>
+              )}
+
+              {loading && (
+                <div className="card loading-card" role="status" aria-live="polite">
+                  <div className="spinner" aria-hidden="true"></div>
+                  <div className="loading-content">
+                    <h3>Executing Investigation Pipeline</h3>
+                    <p>Executing safe read-only SQL queries, evaluating deterministic calculations, and assembling evidence...</p>
+                  </div>
+                </div>
+              )}
+
+              {data && !loading && (
+                <div className="investigation-flow">
+                  {/* Executive Summary & Key KPIs */}
+                  <ExecutiveSummary data={data} onSelectEvidence={setSelectedEvidenceId} useMock={useMock} currentUser={currentUser} />
+
+                  {/* 1. Synthesized Finding & Categorized Claims */}
+                  <section className="investigation-step" aria-label="Step 1: Synthesized Finding and Claims">
+                    <AnswerCard
+                      answer={data.answer}
+                      claims={data.claims || []}
+                      selectedEvidenceId={selectedEvidenceId}
+                      onSelectEvidence={setSelectedEvidenceId}
+                    />
+                  </section>
+
+                  {/* 2. Evidence & SQL Provenance Trace */}
+                  <section className="investigation-step" aria-label="Step 2: Evidence and Provenance Trace">
+                    <EvidencePanel
+                      evidence={data.evidence || []}
+                      toolCalls={data.tool_calls || []}
+                      claims={data.claims || []}
+                      criteria={data.analysis?.criteria_evaluated || []}
+                      recommendation={data.analysis?.recommendation || null}
+                      selectedEvidenceId={selectedEvidenceId}
+                      onSelectEvidence={setSelectedEvidenceId}
+                    />
+                  </section>
+
+                  {/* 3. Actionable Decision Recommendation */}
+                  {data.analysis && (
+                    <section className="investigation-step" aria-label="Step 3: Actionable Decision Recommendation">
+                      <DecisionCard
+                        analysis={data.analysis}
+                        selectedEvidenceId={selectedEvidenceId}
+                        onSelectEvidence={setSelectedEvidenceId}
+                      />
+                    </section>
+                  )}
+
+                  {/* 4. Human-in-the-Loop Audit & Review */}
+                  <section className="investigation-step" aria-label="Step 4: Human-in-the-Loop Audit & Review">
+                    <HumanReviewPanel
+                      key={data?.metadata?.investigation_id || "inv_mock_123456"}
+                      investigationId={data?.metadata?.investigation_id || "inv_mock_123456"}
+                      investigationStatus={
+                        data?.status || (
+                          data?.metadata?.robustness_status === 'SENSITIVE' || data?.analysis?.robustness?.status === 'SENSITIVE'
+                            ? 'REQUIRES_REVIEW'
+                            : 'COMPLETED'
+                        )
+                      }
+                      latestReview={data?.latest_review || null}
+                      reviewCount={data?.review_count || 0}
+                      useMock={useMock}
+                      currentUser={currentUser}
+                      ownerId={data?.owner_id || data?.metadata?.owner_id || "usr_analyst_01"}
+                    />
+                  </section>
+
+                  {/* 5. Robustness Assessment */}
+                  {data.analysis?.robustness && (
+                    <section className="investigation-step" aria-label="Step 5: Robustness Assessment">
+                      <RobustnessCard
+                        key={data?.metadata?.investigation_id || "inv_mock_123456"}
+                        robustness={data.analysis.robustness}
+                        investigationId={data?.metadata?.investigation_id || "inv_mock_123456"}
+                        selectedEvidenceId={selectedEvidenceId}
+                        onSelectEvidence={setSelectedEvidenceId}
+                        useMock={useMock}
+                      />
+                    </section>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+        </main>
+      </div>
 
       <footer className="footer" role="contentinfo">
         <p>VERIDEX — Traceable Evidence • Deterministic Calculations • Human Decisions</p>

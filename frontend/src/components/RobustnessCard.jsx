@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { reassessInvestigation } from '../api/client.js';
 import { ScenarioDiffView } from './ScenarioDiffView.jsx';
+import { RobustnessScenarioChart } from './visualization/RobustnessScenarioChart.jsx';
 
 function formatMetricKey(key) {
   if (!key) return '';
@@ -95,8 +96,6 @@ export function RobustnessCard({
   const [reassessResult, setReassessResult] = useState(null);
   const [reassessError, setReassessError] = useState(null);
 
-
-
   if (!robustness) return null;
 
   const { status, explanation, baseline_scenario, alternate_scenarios = [], supporting_evidence_ids = [] } = robustness;
@@ -129,6 +128,15 @@ export function RobustnessCard({
       <RobustnessStatusMeter status={status} />
 
       <p className="robustness-explanation">{explanation}</p>
+
+      {/* Visual Scenario Sensitivity Perturbation Chart */}
+      <div className="robustness-viz-block">
+        <RobustnessScenarioChart
+          baselineScenario={baseline_scenario}
+          alternateScenarios={alternate_scenarios}
+          robustnessStatus={status}
+        />
+      </div>
 
       {/* Interactive Scenario Shift Control Section */}
       <div className="interactive-robustness-section">

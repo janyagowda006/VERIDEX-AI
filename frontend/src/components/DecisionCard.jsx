@@ -1,5 +1,7 @@
 import React from 'react';
 import { CopyButton } from './CopyButton.jsx';
+import { CandidateComparisonChart } from './visualization/CandidateComparisonChart.jsx';
+import { CriteriaThresholdView } from './visualization/CriteriaThresholdView.jsx';
 
 export function DecisionCard({ analysis, selectedEvidenceId, onSelectEvidence }) {
   if (!analysis) return null;
@@ -9,7 +11,7 @@ export function DecisionCard({ analysis, selectedEvidenceId, onSelectEvidence })
     selectedEvidenceId && recommendation?.supporting_evidence_ids?.includes(selectedEvidenceId)
   );
 
-  // Parse ranking items dynamically (contract resilient)
+  // Parse ranking items dynamically for the table view (contract resilient)
   const parsedRankings = rankings.map((r, idx) => {
     const details = r?.details || {};
     const topKeys = Object.keys(r || {}).filter((k) => k !== 'rank' && k !== 'details');
@@ -41,15 +43,6 @@ export function DecisionCard({ analysis, selectedEvidenceId, onSelectEvidence })
       numericVal,
     };
   });
-
-  const allRankNums = parsedRankings.map((p) => p.rankNum);
-  const minRank = allRankNums.length > 0 ? Math.min(...allRankNums, 1) : 1;
-  const maxRank = allRankNums.length > 0 ? Math.max(...allRankNums, 1) : 1;
-  const rankSpan = maxRank - minRank;
-  const minBarPercent = parsedRankings.length > 3 ? 25 : 35;
-
-  // Visual rankings sorted by rankNum so #1 is on top even if raw array is unsorted
-  const visualRankings = [...parsedRankings].sort((a, b) => a.rankNum - b.rankNum);
 
   return (
     <div className="card decision-card">
@@ -100,69 +93,24 @@ export function DecisionCard({ analysis, selectedEvidenceId, onSelectEvidence })
         <p className="no-data-text">No recommendation generated.</p>
       )}
 
-      {/* Evaluated Criteria */}
-      {criteria_evaluated.length > 0 && (
-        <div className="criteria-section">
-          <h4>Evaluated Decision Criteria ({criteria_evaluated.length})</h4>
-          <ul className="criteria-list">
-            {criteria_evaluated.map((crit) => (
-              <li key={crit.criterion_id} className={`crit-item ${crit.is_met ? 'met' : 'unmet'}`}>
-                <span className="crit-status">{crit.is_met ? '✓ SATISFIED' : '✗ NOT SATISFIED'}</span>
-                <span className="crit-name">{crit.criterion_name}</span>
-                <p className="crit-expl">{crit.explanation}</p>
-              </li>
-            ))}
-          </ul>
+      {/* Candidate Performance Comparison Visualization */}
+      {rankings.length > 0 && (
+        <div className="decision-viz-block">
+          <CandidateComparisonChart rankings={rankings} />
         </div>
       )}
 
-      {/* Candidate Rankings */}
+      {/* Evaluated Decision Criteria & Threshold Gauge */}
+      {criteria_evaluated.length > 0 && (
+        <div className="decision-viz-block">
+          <CriteriaThresholdView criteria={criteria_evaluated} />
+        </div>
+      )}
+
+      {/* Detailed Candidate Rankings Data Table */}
       {rankings.length > 0 && (
         <div className="rankings-section">
-          <h4>Candidate Rankings</h4>
-
-          {/* Visual Distribution of Candidate Rankings by Rank Order */}
-          <div className="rankings-visual" role="img" aria-label="Visual ranking order of candidates">
-            <div className="rankings-visual-header">
-              <span className="visual-title">Candidate Ranking Order</span>
-              <span className="visual-metric-name">
-                {visualRankings[0]?.metricKey ? `Observed: ${visualRankings[0].metricKey.replace(/_/g, ' ')}` : 'Observed Values'}
-              </span>
-            </div>
-            <div className="ranking-bars-list">
-              {visualRankings.map((p) => {
-                const percentage = rankSpan <= 0
-                  ? 100
-                  : Math.max(
-                      Math.round(100 - ((p.rankNum - minRank) / rankSpan) * (100 - minBarPercent)),
-                      minBarPercent
-                    );
-                const isLeader = p.rankNum === 1;
-                return (
-                  <div key={p.r?.rank ?? p.idx} className={`ranking-bar-item ${isLeader ? 'bar-leader' : ''}`}>
-                    <div className="bar-labels">
-                      <span className="bar-candidate-label">
-                        <span className={`bar-rank-badge ${isLeader ? 'badge-leader' : ''}`}>#{p.rankNum}</span>
-                        <span className="bar-candidate-name">{p.entityValue}</span>
-                      </span>
-                      <span className="bar-metric-value">
-                        {typeof p.rawMetric === 'number' ? p.rawMetric.toLocaleString() : p.rawMetric ?? '—'}
-                      </span>
-                    </div>
-                    <div className="bar-track" aria-hidden="true">
-                      <div
-                        className={`bar-fill ${isLeader ? 'fill-leader' : ''}`}
-                        style={{ width: `${percentage}%` }}
-                      >
-                        {isLeader && <span className="leader-pill">Top Rank</span>}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
+          <h4>Candidate Rankings Table ({rankings.length})</h4>
           <table className="data-table">
             <thead>
               <tr>
@@ -176,7 +124,7 @@ export function DecisionCard({ analysis, selectedEvidenceId, onSelectEvidence })
                 <tr key={p.r?.rank ?? p.idx}>
                   <td><strong>#{p.rankNum}</strong></td>
                   <td>{p.entityValue}</td>
-                  <td>{p.rawMetric ?? '—'}</td>
+                  <td>{typeof p.rawMetric === 'number' ? p.rawMetric.toLocaleString() : (p.rawMetric ?? '—')}</td>
                 </tr>
               ))}
             </tbody>

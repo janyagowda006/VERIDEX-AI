@@ -14,10 +14,10 @@ export function ExecutiveSummary({ data, onSelectEvidence, useMock = false, curr
   const userRole = currentUser?.role || 'ANALYST';
   const canExport = ['REVIEWER', 'AUDITOR', 'ADMIN'].includes(userRole);
 
-  const { claims = [], evidence = [], analysis, metadata = {} } = data;
+  const { claims = [], evidence = [], analysis, metadata = {}, latest_review = null, status = 'COMPLETED' } = data;
   const investigationId = metadata.investigation_id || data.investigation_id || "inv_mock_123456";
+  const recommendation = analysis?.recommendation || null;
   const robustnessStatus = analysis?.robustness?.status || metadata.robustness_status || 'STABLE';
-  const rankings = analysis?.rankings || [];
   const criteria = analysis?.criteria_evaluated || [];
   const criteriaPassed = criteria.filter((c) => c.is_met).length;
 
@@ -63,12 +63,12 @@ export function ExecutiveSummary({ data, onSelectEvidence, useMock = false, curr
     <div className="card executive-summary-card" aria-label="Executive Decision Summary">
       <div className="summary-header">
         <div>
-          <h2 className="summary-title">Executive Summary & Provenance KPIs</h2>
-          <p className="summary-subtitle">Traceable investigation summary</p>
+          <h2 className="summary-title">Executive Decision Dashboard</h2>
+          <p className="summary-subtitle">Traceable business intelligence summary & provenance metrics</p>
         </div>
 
         <div className="export-controls-group">
-          <span className="export-label">Export Report:</span>
+          <span className="export-label">Export Audit Report:</span>
           <button
             type="button"
             className="btn-export-report"
@@ -98,6 +98,21 @@ export function ExecutiveSummary({ data, onSelectEvidence, useMock = false, curr
         </div>
       )}
 
+      {/* Hero Recommendation Summary Banner */}
+      {recommendation && (
+        <div className="dash-hero-banner">
+          <div className="hero-top-row">
+            <span className="hero-tag">🎯 Key Executive Action</span>
+            <span className={`robustness-badge status-${robustnessStatus.toLowerCase()}`}>
+              Robustness: {robustnessStatus}
+            </span>
+          </div>
+          <h3 className="hero-action-title">{recommendation.action_title}</h3>
+          <p className="hero-rationale">{recommendation.rationale}</p>
+        </div>
+      )}
+
+      {/* Executive KPI Grid */}
       <div className="kpi-grid">
         {/* KPI 1: Robustness Status */}
         <div className={`kpi-card kpi-robustness status-${robustnessStatus.toLowerCase()}`}>
@@ -115,7 +130,7 @@ export function ExecutiveSummary({ data, onSelectEvidence, useMock = false, curr
           </div>
         </div>
 
-        {/* KPI 2: Evidence Items */}
+        {/* KPI 2: Verified Evidence Items */}
         <button
           type="button"
           className="kpi-card kpi-card-button"
@@ -143,27 +158,37 @@ export function ExecutiveSummary({ data, onSelectEvidence, useMock = false, curr
           </div>
         </div>
 
-        {/* KPI 4: Criteria Satisfied */}
+        {/* KPI 4: Criteria Compliance */}
         {criteria.length > 0 && (
           <div className="kpi-card">
-            <div className="kpi-label">Criteria Satisfied</div>
+            <div className="kpi-label">Criteria Compliance</div>
             <div className="kpi-value">
               {criteriaPassed} / {criteria.length}
             </div>
             <div className="kpi-subtext">
-              {criteriaPassed === criteria.length ? '100% threshold compliance' : `${criteria.length - criteriaPassed} unmet criteria`}
+              {criteriaPassed === criteria.length ? '100% threshold satisfied' : `${criteria.length - criteriaPassed} unmet criteria`}
             </div>
           </div>
         )}
 
-        {/* KPI 5: Candidates Evaluated */}
-        {rankings.length > 0 && (
-          <div className="kpi-card">
-            <div className="kpi-label">Candidates Evaluated</div>
-            <div className="kpi-value">{rankings.length}</div>
-            <div className="kpi-subtext">Ranked across observed metrics</div>
+        {/* KPI 5: Human Review Decision Status */}
+        <div className="kpi-card">
+          <div className="kpi-label">Human Review Status</div>
+          <div className="kpi-value" style={{ fontSize: '1.1rem' }}>
+            {latest_review ? (
+              <span className={`audit-badge badge-${(latest_review.review_status || 'PENDING').toLowerCase()}`}>
+                {latest_review.review_status}
+              </span>
+            ) : status === 'REQUIRES_REVIEW' ? (
+              <span className="requires-review-badge">REQUIRES REVIEW</span>
+            ) : (
+              <span className="review-pending-tag">PENDING REVIEW</span>
+            )}
           </div>
-        )}
+          <div className="kpi-subtext">
+            {latest_review ? `Reviewed by ${latest_review.reviewer_id}` : 'HITL verification layer'}
+          </div>
+        </div>
       </div>
     </div>
   );

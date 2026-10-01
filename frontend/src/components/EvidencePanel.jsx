@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ClaimBadge } from './ClaimBadge.jsx';
 import { CopyButton } from './CopyButton.jsx';
+import { EvidenceDecisionTrace } from './visualization/EvidenceDecisionTrace.jsx';
 
 /**
  * Formats the calculation output based on the formula type defined in the API contract.
@@ -30,7 +31,15 @@ function formatCalculationOutput(calculation) {
   }
 }
 
-export function EvidencePanel({ evidence = [], toolCalls = [], selectedEvidenceId, onSelectEvidence }) {
+export function EvidencePanel({
+  evidence = [],
+  toolCalls = [],
+  claims = [],
+  criteria = [],
+  recommendation = null,
+  selectedEvidenceId,
+  onSelectEvidence
+}) {
   const [expanded, setExpanded] = useState(true);
   const [activeTab, setActiveTab] = useState('evidence');
 
@@ -90,6 +99,18 @@ export function EvidencePanel({ evidence = [], toolCalls = [], selectedEvidenceI
 
           {activeTab === 'evidence' && (
             <div className="evidence-list">
+              {/* Visual End-to-End Evidence Lineage Flowchart */}
+              {evidence.length > 0 && (
+                <div className="evidence-viz-block">
+                  <EvidenceDecisionTrace
+                    evidence={evidence}
+                    claims={claims}
+                    criteria={criteria}
+                    recommendation={recommendation}
+                    onSelectEvidence={onSelectEvidence}
+                  />
+                </div>
+              )}
               {evidence.length === 0 ? (
                 <p className="no-data-text">No evidence items recorded for this investigation.</p>
               ) : (

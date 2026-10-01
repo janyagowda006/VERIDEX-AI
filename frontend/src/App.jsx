@@ -370,6 +370,9 @@ function App() {
               <EvidencePanel
                 evidence={data.evidence || []}
                 toolCalls={data.tool_calls || []}
+                claims={data.claims || []}
+                criteria={data.analysis?.criteria_evaluated || []}
+                recommendation={data.analysis?.recommendation || null}
                 selectedEvidenceId={selectedEvidenceId}
                 onSelectEvidence={setSelectedEvidenceId}
               />

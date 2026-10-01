@@ -11,6 +11,7 @@ from app.schemas.investigation import (
     InvestigationStatus,
     InvestigationSummary,
     InvestigationDetail,
+    InvestigationReassessResponse,
     InvestigationReviewCreate,
     InvestigationReviewStatus,
     InvestigationMetricsSummary,
@@ -18,6 +19,7 @@ from app.schemas.investigation import (
 )
 from app.schemas.ai import AskResponse
 from app.services.robustness import ROBUSTNESS_STATUS_SENSITIVE
+
 
 
 def _sanitize_error_text(error_msg: str) -> str:
@@ -216,9 +218,9 @@ class InvestigationService:
         using a caller-specified scenario shift percentage.
         Does NOT invoke the LLM or execute new database SQL queries.
         """
-        from app.schemas.investigation import InvestigationReassessResponse
         from app.services.robustness import RobustnessEngine
         from app.ai.orchestrator import _evaluate_orchestrated_robustness, _is_valid_finite_number
+
 
         investigation = cls.get_investigation_by_id(db=db, investigation_id=investigation_id)
         if not investigation:

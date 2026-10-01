@@ -1,6 +1,8 @@
 import pytest
 from unittest.mock import patch, MagicMock
+import google.genai
 from fastapi.testclient import TestClient
+
 from app.main import app
 from app.core.db import get_db
 from app.core.config import settings

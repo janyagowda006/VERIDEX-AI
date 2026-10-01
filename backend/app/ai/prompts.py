@@ -1,4 +1,6 @@
+from typing import Any
 from app.schemas.sql_tool import SchemaContext
+
 
 SYSTEM_PROMPT_V1 = """You are VERIDEX, an evidence-first AI decision intelligence assistant for business data.
 

@@ -26,6 +26,7 @@ from app.schemas.ai import (
     AskResponse,
     ToolCallRecord
 )
+from app.schemas.audit import AuditLogResponse
 
 __all__ = [
     "SQLQueryRequest",
@@ -47,5 +48,6 @@ __all__ = [
     "DecisionAnalysis",
     "AskRequest",
     "AskResponse",
-    "ToolCallRecord"
+    "ToolCallRecord",
+    "AuditLogResponse"
 ]

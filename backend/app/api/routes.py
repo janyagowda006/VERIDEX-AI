@@ -26,6 +26,8 @@ from app.schemas.investigation import (
 )
 from app.services.investigation_service import InvestigationService
 from app.services.report_exporter import ReportExporter
+from app.services.audit_logger import AuditLogger
+from app.schemas.audit import AuditLogResponse
 from app.ai.provider import BaseLLMProvider, get_llm_provider
 from app.ai.orchestrator import run_investigation_loop
 from app.core.auth import verify_password, create_access_token
@@ -33,6 +35,12 @@ from app.api.deps import get_current_user, require_roles, seed_default_users_if_
 
 
 router = APIRouter()
+
+
+def _get_client_ip(request: Request) -> Optional[str]:
+    if request and request.client:
+        return request.client.host
+    return None
 
 
 @router.get("/health")
@@ -46,22 +54,46 @@ def health_check():
 
 @router.post("/api/auth/login", response_model=Token)
 def login_for_access_token(
-    request: LoginRequest,
+    request_data: LoginRequest,
+    request: Request,
     db: Session = Depends(get_db)
 ):
     """
     Authenticates user credentials (email & password) against database users.
     Returns a signed JWT access token and User profile upon success.
+    Records LOGIN_SUCCESS and LOGIN_FAILURE security audit log events.
     """
     seed_default_users_if_needed(db)
-    user = db.query(User).filter(User.email == request.email.strip()).first()
-    if not user or not verify_password(request.password, user.hashed_password):
+    user = db.query(User).filter(User.email == request_data.email.strip()).first()
+    client_ip = _get_client_ip(request)
+
+    if not user or not verify_password(request_data.password, user.hashed_password):
+        AuditLogger.record_event(
+            db=db,
+            action_type="LOGIN_FAILURE",
+            user_id=user.user_id if user else None,
+            user_role=user.role if user else None,
+            resource_id=request_data.email.strip(),
+            status="FAILURE",
+            ip_address=client_ip,
+            details="Invalid credentials"
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
     if not user.is_active:
+        AuditLogger.record_event(
+            db=db,
+            action_type="LOGIN_FAILURE",
+            user_id=user.user_id,
+            user_role=user.role,
+            resource_id=user.user_id,
+            status="FAILURE",
+            ip_address=client_ip,
+            details="User account inactive"
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User account is inactive",
@@ -71,11 +103,23 @@ def login_for_access_token(
     access_token = create_access_token(
         data={"user_id": user.user_id, "email": user.email, "role": user.role}
     )
+
+    AuditLogger.record_event(
+        db=db,
+        action_type="LOGIN_SUCCESS",
+        user_id=user.user_id,
+        user_role=user.role,
+        resource_id=user.user_id,
+        status="SUCCESS",
+        ip_address=client_ip
+    )
+
     return Token(
         access_token=access_token,
         token_type="bearer",
         user=UserRead.model_validate(user)
     )
+
 
 
 @router.get("/api/auth/me", response_model=UserRead)
@@ -399,6 +443,19 @@ def create_investigation_review(
             review_data=review_data,
             reviewer_user_id=final_reviewer
         )
+        rev_status_str = str(review_data.review_status.value if hasattr(review_data.review_status, "value") else review_data.review_status).upper()
+        act_type = "REVIEW_APPROVE" if rev_status_str == "APPROVED" else ("REVIEW_REJECT" if rev_status_str == "REJECTED" else f"REVIEW_{rev_status_str}")
+        AuditLogger.record_event(
+            db=db,
+            action_type=act_type,
+            user_id=current_user.user_id,
+            user_role=current_user.role,
+            resource_id=investigation_id,
+            status="SUCCESS",
+            ip_address=_get_client_ip(request),
+            details=f"Decision: {rev_status_str}"
+        )
+
         return InvestigationReviewResponse.model_validate(review_record)
     except ValueError as err:
         err_str = str(err)
@@ -419,6 +476,7 @@ def create_investigation_review(
 @router.get("/api/investigations/{investigation_id}/export")
 def export_investigation_report(
     investigation_id: str,
+    request: Request,
     format: str = Query(default="json", description="Export format: 'json' or 'markdown'"),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("REVIEWER", "AUDITOR", "ADMIN"))
@@ -426,6 +484,7 @@ def export_investigation_report(
     """
     Exports a persisted investigation as a structured JSON object or Markdown audit report.
     Requires REVIEWER, AUDITOR, or ADMIN role.
+    Records EXPORT_REPORT audit log event.
     """
     fmt = (format or "json").lower().strip()
     if fmt not in ("json", "markdown"):
@@ -437,12 +496,32 @@ def export_investigation_report(
     try:
         if fmt == "json":
             data = ReportExporter.export_as_json(db=db, investigation_id=investigation_id)
+            AuditLogger.record_event(
+                db=db,
+                action_type="EXPORT_REPORT",
+                user_id=current_user.user_id,
+                user_role=current_user.role,
+                resource_id=investigation_id,
+                status="SUCCESS",
+                ip_address=_get_client_ip(request),
+                details="Format: json"
+            )
             return JSONResponse(
                 content=data,
                 headers={"Content-Disposition": f'attachment; filename="{investigation_id}_audit_report.json"'}
             )
         else:
             md_text = ReportExporter.export_as_markdown(db=db, investigation_id=investigation_id)
+            AuditLogger.record_event(
+                db=db,
+                action_type="EXPORT_REPORT",
+                user_id=current_user.user_id,
+                user_role=current_user.role,
+                resource_id=investigation_id,
+                status="SUCCESS",
+                ip_address=_get_client_ip(request),
+                details="Format: markdown"
+            )
             return Response(
                 content=md_text,
                 media_type="text/markdown; charset=utf-8",
@@ -453,3 +532,30 @@ def export_investigation_report(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(val_err)
         )
+
+
+@router.get("/api/v1/audit/logs", response_model=List[AuditLogResponse])
+def list_security_audit_logs(
+    user_id: Optional[str] = Query(default=None, description="Optional filter by user ID."),
+    action_type: Optional[str] = Query(default=None, description="Optional filter by action type."),
+    resource_id: Optional[str] = Query(default=None, description="Optional filter by resource ID."),
+    status: Optional[str] = Query(default=None, description="Optional filter by event status."),
+    limit: int = Query(default=50, ge=1, le=200, description="Max audit logs to return."),
+    offset: int = Query(default=0, ge=0, description="Pagination offset."),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("AUDITOR", "ADMIN"))
+):
+    """
+    Retrieves immutable enterprise audit log records ordered newest-first.
+    Restricted strictly to AUDITOR and ADMIN roles.
+    """
+    records = AuditLogger.list_audit_logs(
+        db=db,
+        user_id=user_id,
+        action_type=action_type,
+        resource_id=resource_id,
+        status=status,
+        limit=limit,
+        offset=offset
+    )
+    return [AuditLogResponse.model_validate(r) for r in records]

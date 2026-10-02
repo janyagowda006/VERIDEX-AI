@@ -19,6 +19,34 @@ services:
       timeout: 5s
       retries: 5
 
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: veridex-backend
+    restart: always
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-veridex}:${POSTGRES_PASSWORD:-veridex_pass}@postgres:5432/${POSTGRES_DB:-veridex}
+      SECRET_KEY: ${SECRET_KEY:-veridex_super_secret_jwt_key_change_in_production_32bytes!}
+      ALGORITHM: HS256
+      LLM_PROVIDER: ${LLM_PROVIDER:-mock}
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: veridex-frontend
+    restart: always
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+
 volumes:
   postgres_data:
     driver: local

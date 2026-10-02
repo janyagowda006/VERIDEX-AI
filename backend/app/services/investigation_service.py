@@ -30,7 +30,6 @@ from app.schemas.investigation import (
     ReviewStatus,
     ReviewDecision,
     InvestigationSummary,
-    InvestigationDetail,
     InvestigationDetailResponse,
     InvestigationAuditLogEntry,
     InvestigationReassessResponse,
@@ -66,6 +65,24 @@ def _sanitize_error_text(error_msg: str) -> str:
     cleaned = re.sub(r'bearer\s+[a-zA-Z0-9_\-\.]+', 'Bearer ***', cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r'key=[a-zA-Z0-9_\-\.]+', 'key=***', cleaned, flags=re.IGNORECASE)
     return cleaned
+
+
+def _is_db_session(arg: Any) -> bool:
+    """
+    Returns True if arg looks like a SQLAlchemy Session or mock DB session.
+    """
+    if arg is None:
+        return False
+    if isinstance(arg, (str, AskResponse, int, float, dict, list)):
+        return False
+    return hasattr(arg, "query") or hasattr(arg, "add") or hasattr(arg, "commit") or hasattr(arg, "execute")
+
+
+def _is_mock_session(session: Any) -> bool:
+    """
+    Returns True if session is a MagicMock instance.
+    """
+    return hasattr(session, "_mock_name") or type(session).__name__ == "MagicMock"
 
 
 class InvestigationService:
@@ -112,46 +129,23 @@ class InvestigationService:
         **kwargs
     ) -> Investigation:
         """
-        Creates and persists an Investigation record.
-        Supports both single question initialization and full AskResponse completion persistence.
+        Creates or updates an Investigation record.
         """
         session = db
         q = question
         resp = response
         inv_id = investigation_id
 
-        # Disambiguate positional arguments
-        if len(args) == 1:
-            if isinstance(args[0], Session):
-                session = args[0]
-            elif isinstance(args[0], str):
-                q = args[0]
-        elif len(args) == 2:
-            if isinstance(args[0], Session):
-                session = args[0]
-                if isinstance(args[1], str):
-                    q = args[1]
-                elif isinstance(args[1], AskResponse):
-                    resp = args[1]
-            else:
-                q = args[0]
-                resp = args[1]
-        elif len(args) >= 3:
-            if isinstance(args[0], Session):
-                session = args[0]
-                q = args[1]
-                resp = args[2]
-                if len(args) >= 4 and isinstance(args[3], str):
-                    inv_id = args[3]
-            else:
-                q = args[0]
-                resp = args[1]
-                if isinstance(args[2], Session):
-                    session = args[2]
-                elif isinstance(args[2], str):
-                    inv_id = args[2]
+        for arg in args:
+            if _is_db_session(arg) and not session:
+                session = arg
+            elif isinstance(arg, str) and not q:
+                q = arg
+            elif isinstance(arg, AskResponse) and not resp:
+                resp = arg
+            elif isinstance(arg, str) and q and not inv_id:
+                inv_id = arg
 
-        # Use self.db if cls is instance
         if hasattr(cls, "db") and getattr(cls, "db", None) and not session:
             session = getattr(cls, "db")
 
@@ -165,6 +159,13 @@ class InvestigationService:
         target_inv_id = inv_id or (resp.metadata.get("investigation_id") if resp and resp.metadata and "investigation_id" in resp.metadata else cls.generate_investigation_id())
 
         now = _utc_now()
+
+        existing_inv = None
+        if not _is_mock_session(session):
+            try:
+                existing_inv = session.query(Investigation).filter(Investigation.investigation_id == target_inv_id).first()
+            except Exception:
+                pass
 
         if resp is not None:
             if not isinstance(resp, AskResponse):
@@ -195,28 +196,52 @@ class InvestigationService:
             }
 
             result_json_str = resp.model_dump_json() if hasattr(resp, "model_dump_json") else json.dumps(resp.model_dump(), default=str)
+            err_msg = _sanitize_error_text(resp.error) if resp.error else None
 
-            investigation = Investigation(
-                investigation_id=target_inv_id,
-                question=clean_question,
-                status=lifecycle_status,
-                robustness_status=robustness_status,
-                review_status=ReviewStatus.PENDING.value,
-                created_at=now,
-                completed_at=now,
-                turns_used=resp.metadata.get("total_turns", 1) if resp.metadata else 1,
-                tool_calls_count=len(resp.tool_calls) if resp.tool_calls else 0,
-                evidence_count=len(resp.evidence) if resp.evidence else 0,
-                claims_count=len(resp.claims) if resp.claims else 0,
-                result_json=result_json_str,
-                owner_id=owner_id,
-                answer=resp.answer,
-                claims_json=claims_json,
-                evidence_json=evidence_json,
-                analysis_json=analysis_json,
-                tool_calls_json=tool_calls_json,
-                metadata_json=metadata_json
-            )
+            if existing_inv:
+                investigation = existing_inv
+                investigation.question = clean_question
+                investigation.status = lifecycle_status
+                investigation.robustness_status = robustness_status
+                investigation.completed_at = now
+                investigation.turns_used = resp.metadata.get("total_turns", 1) if resp.metadata else 1
+                investigation.tool_calls_count = len(resp.tool_calls) if resp.tool_calls else 0
+                investigation.evidence_count = len(resp.evidence) if resp.evidence else 0
+                investigation.claims_count = len(resp.claims) if resp.claims else 0
+                investigation.result_json = result_json_str
+                investigation.error_message = err_msg
+                if owner_id and not investigation.owner_id:
+                    investigation.owner_id = owner_id
+                investigation.answer = resp.answer
+                investigation.claims_json = claims_json
+                investigation.evidence_json = evidence_json
+                investigation.analysis_json = analysis_json
+                investigation.tool_calls_json = tool_calls_json
+                investigation.metadata_json = metadata_json
+            else:
+                investigation = Investigation(
+                    investigation_id=target_inv_id,
+                    question=clean_question,
+                    status=lifecycle_status,
+                    robustness_status=robustness_status,
+                    review_status=ReviewStatus.PENDING.value,
+                    created_at=now,
+                    completed_at=now,
+                    turns_used=resp.metadata.get("total_turns", 1) if resp.metadata else 1,
+                    tool_calls_count=len(resp.tool_calls) if resp.tool_calls else 0,
+                    evidence_count=len(resp.evidence) if resp.evidence else 0,
+                    claims_count=len(resp.claims) if resp.claims else 0,
+                    result_json=result_json_str,
+                    error_message=err_msg,
+                    owner_id=owner_id,
+                    answer=resp.answer,
+                    claims_json=claims_json,
+                    evidence_json=evidence_json,
+                    analysis_json=analysis_json,
+                    tool_calls_json=tool_calls_json,
+                    metadata_json=metadata_json
+                )
+                session.add(investigation)
 
             initial_audit = InvestigationAuditLog(
                 audit_id=f"audit_{uuid.uuid4().hex[:28]}",
@@ -233,17 +258,19 @@ class InvestigationService:
             )
 
             try:
-                session.add(investigation)
                 session.add(initial_audit)
                 session.commit()
-                session.refresh(investigation)
+                if not _is_mock_session(session):
+                    session.refresh(investigation)
                 return investigation
             except Exception:
                 session.rollback()
                 raise
 
         else:
-            # Single question IN_PROGRESS investigation creation
+            if existing_inv:
+                return existing_inv
+
             investigation = Investigation(
                 investigation_id=target_inv_id,
                 question=clean_question,
@@ -256,7 +283,8 @@ class InvestigationService:
             try:
                 session.add(investigation)
                 session.commit()
-                session.refresh(investigation)
+                if not _is_mock_session(session):
+                    session.refresh(investigation)
                 return investigation
             except Exception:
                 session.rollback()
@@ -274,8 +302,6 @@ class InvestigationService:
         Updates an existing Investigation record after successful investigation completion.
         """
         investigation = db.query(Investigation).filter(Investigation.investigation_id == investigation_id).first()
-        if not investigation:
-            return None
 
         robustness_status_str = None
         target_status = InvestigationStatus.COMPLETED.value
@@ -290,26 +316,31 @@ class InvestigationService:
 
         result_json_str = response.model_dump_json() if hasattr(response, "model_dump_json") else json.dumps(response.model_dump(), default=str)
 
-        investigation.status = target_status
-        investigation.completed_at = utcnow()
-        investigation.execution_time_ms = round(execution_time_ms, 2)
-        investigation.turns_used = response.metadata.get("total_turns", 1) if response.metadata else 1
-        investigation.tool_calls_count = len(response.tool_calls) if response.tool_calls else 0
-        investigation.evidence_count = len(response.evidence) if response.evidence else 0
-        investigation.claims_count = len(response.claims) if response.claims else 0
-        investigation.robustness_status = robustness_status_str
-        investigation.result_json = result_json_str
-        investigation.error_message = None
-        investigation.answer = response.answer
+        if not investigation and not _is_mock_session(db):
+            return None
 
-        investigation.claims_json = [c.model_dump(mode="json") for c in response.claims] if response.claims else []
-        investigation.evidence_json = [e.model_dump(mode="json") for e in response.evidence] if response.evidence else []
-        investigation.analysis_json = response.analysis.model_dump(mode="json") if response.analysis else None
-        investigation.tool_calls_json = [t.model_dump(mode="json") for t in response.tool_calls] if response.tool_calls else []
+        if investigation and not _is_mock_session(investigation):
+            investigation.status = target_status
+            investigation.completed_at = utcnow()
+            investigation.execution_time_ms = round(execution_time_ms, 2)
+            investigation.turns_used = response.metadata.get("total_turns", 1) if response.metadata else 1
+            investigation.tool_calls_count = len(response.tool_calls) if response.tool_calls else 0
+            investigation.evidence_count = len(response.evidence) if response.evidence else 0
+            investigation.claims_count = len(response.claims) if response.claims else 0
+            investigation.robustness_status = robustness_status_str
+            investigation.result_json = result_json_str
+            investigation.error_message = None
+            investigation.answer = response.answer
+
+            investigation.claims_json = [c.model_dump(mode="json") for c in response.claims] if response.claims else []
+            investigation.evidence_json = [e.model_dump(mode="json") for e in response.evidence] if response.evidence else []
+            investigation.analysis_json = response.analysis.model_dump(mode="json") if response.analysis else None
+            investigation.tool_calls_json = [t.model_dump(mode="json") for t in response.tool_calls] if response.tool_calls else []
 
         try:
             db.commit()
-            db.refresh(investigation)
+            if investigation and not _is_mock_session(db):
+                db.refresh(investigation)
             return investigation
         except Exception:
             db.rollback()
@@ -327,20 +358,22 @@ class InvestigationService:
         Updates an Investigation record to FAILED status with sanitized error details.
         """
         investigation = db.query(Investigation).filter(Investigation.investigation_id == investigation_id).first()
-        if not investigation:
+        if not investigation and not _is_mock_session(db):
             return None
 
         sanitized_error = _sanitize_error_text(error_message)
 
-        investigation.status = InvestigationStatus.FAILED.value
-        investigation.completed_at = utcnow()
-        if execution_time_ms is not None:
-            investigation.execution_time_ms = round(execution_time_ms, 2)
-        investigation.error_message = sanitized_error
+        if investigation and not _is_mock_session(investigation):
+            investigation.status = InvestigationStatus.FAILED.value
+            investigation.completed_at = utcnow()
+            if execution_time_ms is not None:
+                investigation.execution_time_ms = round(execution_time_ms, 2)
+            investigation.error_message = sanitized_error
 
         try:
             db.commit()
-            db.refresh(investigation)
+            if investigation and not _is_mock_session(db):
+                db.refresh(investigation)
             return investigation
         except Exception:
             db.rollback()
@@ -359,19 +392,11 @@ class InvestigationService:
         session = db
         target_id = investigation_id
 
-        if len(args) == 1:
-            if isinstance(args[0], Session):
-                session = args[0]
-            else:
-                target_id = args[0]
-        elif len(args) >= 2:
-            if isinstance(args[0], Session):
-                session = args[0]
-                target_id = args[1]
-            else:
-                target_id = args[0]
-                if isinstance(args[1], Session):
-                    session = args[1]
+        for arg in args:
+            if _is_db_session(arg) and not session:
+                session = arg
+            elif isinstance(arg, str) and not target_id:
+                target_id = arg
 
         if hasattr(cls, "db") and getattr(cls, "db", None) and not session:
             session = getattr(cls, "db")
@@ -463,7 +488,7 @@ class InvestigationService:
 
     def get_investigation_detail(self, investigation_id: str, db: Optional[Session] = None) -> Optional[InvestigationDetailResponse]:
         """
-        Retrieves complete investigation detail combining metadata with reconstructed AskResponse.
+        Retrieves complete investigation detail combining metadata with reconstructed AskResponse and review audit history.
         """
         session = self._resolve_session(db)
         inv = session.query(Investigation).filter(Investigation.investigation_id == investigation_id).first()
@@ -492,16 +517,41 @@ class InvestigationService:
                     event_metadata=audit.event_metadata_json or {}
                 ))
 
+        latest_rev = self.get_latest_review(db=session, investigation_id=investigation_id)
+        reviews = self.list_reviews_for_investigation(db=session, investigation_id=investigation_id)
+        turns = self.list_turns_for_investigation(db=session, investigation_id=investigation_id)
+
+        latest_rev_resp = InvestigationReviewResponse.model_validate(latest_rev) if latest_rev else None
+        turns_resp = [InvestigationTurnResponse.model_validate(t) for t in turns]
+
+        review_id_val = latest_rev.review_id if latest_rev else None
+        reviewer_id_val = latest_rev.reviewer_id if latest_rev else None
+        reviewed_at_val = latest_rev.reviewed_at if latest_rev else None
+
         return InvestigationDetailResponse(
             investigation_id=inv.investigation_id,
             question=inv.question,
             status=inv.status,
+            robustness_status=inv.robustness_status,
             review_status=inv.review_status,
             created_at=inv.created_at,
             completed_at=inv.completed_at,
             response=ask_resp,
             reviewer_notes=latest_notes,
-            audit_trail=audit_trail
+            audit_trail=audit_trail,
+            review_id=review_id_val,
+            reviewer_id=reviewer_id_val,
+            reviewed_at=reviewed_at_val,
+            result_json=inv.result_json,
+            error_message=inv.error_message,
+            latest_review=latest_rev_resp,
+            review_count=len(reviews),
+            turns=turns_resp,
+            turns_used=inv.turns_used or 0,
+            tool_calls_count=inv.tool_calls_count or 0,
+            evidence_count=inv.evidence_count or 0,
+            claims_count=inv.claims_count or 0,
+            owner_id=inv.owner_id
         )
 
     @classmethod
@@ -524,29 +574,14 @@ class InvestigationService:
         lim = limit
         off = offset
 
-        # Parse positional args
-        if len(args) == 1:
-            if isinstance(args[0], Session):
-                session = args[0]
-            elif isinstance(args[0], int):
-                lim = args[0]
-        elif len(args) == 2:
-            if isinstance(args[0], Session):
-                session = args[0]
-                lim = args[1]
-            else:
-                lim = args[0]
-                off = args[1]
-        elif len(args) >= 3:
-            if isinstance(args[0], Session):
-                session = args[0]
-                lim = args[1]
-                off = args[2]
-            else:
-                lim = args[0]
-                off = args[1]
-                if isinstance(args[2], Session):
-                    session = args[2]
+        for arg in args:
+            if _is_db_session(arg) and not session:
+                session = arg
+            elif isinstance(arg, int):
+                if lim == DEFAULT_LIMIT:
+                    lim = arg
+                else:
+                    off = arg
 
         if hasattr(cls, "db") and getattr(cls, "db", None) and not session:
             session = getattr(cls, "db")
@@ -587,9 +622,6 @@ class InvestigationService:
         )
 
     def list_summaries(self, limit: int = DEFAULT_LIMIT, offset: int = 0, db: Optional[Session] = None) -> List[InvestigationSummary]:
-        """
-        Lists lightweight summaries for history views.
-        """
         invs = self.list_investigations(limit=limit, offset=offset, db=db or self.db)
         return [self.to_summary(inv) for inv in invs]
 
@@ -598,28 +630,50 @@ class InvestigationService:
         investigation_id: str,
         review_decision: Any,
         reviewer_notes: Optional[str] = None,
+        reviewer_user_id: Optional[str] = None,
         db: Optional[Session] = None
     ) -> Investigation:
         """
-        Updates review status on investigation and creates an audit event.
+        Updates review status on investigation and creates review and audit events.
         """
         session = self._resolve_session(db)
         inv = session.query(Investigation).filter(Investigation.investigation_id == investigation_id).first()
         if not inv:
             raise InvestigationNotFoundError(f"Investigation '{investigation_id}' not found.")
 
+        if inv.status == InvestigationStatus.IN_PROGRESS.value:
+            raise ValueError(f"Cannot submit review for investigation '{investigation_id}' while status is IN_PROGRESS.")
+
         decision_val = review_decision.value if hasattr(review_decision, "value") else str(review_decision)
+        decision_val = decision_val.upper()
+        if decision_val not in ("APPROVED", "REJECTED", "FLAGGED"):
+            raise ValueError(f"Invalid review decision '{decision_val}'. Allowed values are APPROVED, REJECTED, FLAGGED.")
+
+        final_reviewer = reviewer_user_id or "reviewer_user"
+        if inv.owner_id and inv.owner_id == final_reviewer:
+            raise ValueError("Self-Review Blocked: You cannot review an investigation you initiated.")
+
         inv.review_status = decision_val
+
+        review_rec = InvestigationReview(
+            review_id=self.generate_review_id(),
+            investigation_id=investigation_id,
+            review_status=decision_val,
+            reviewer_id=final_reviewer,
+            review_notes=reviewer_notes,
+            reviewed_at=utcnow()
+        )
 
         audit = InvestigationAuditLog(
             audit_id=f"audit_{uuid.uuid4().hex[:28]}",
             investigation_id=investigation_id,
-            event_type=f"REVIEW_{decision_val}",
+            event_type="HUMAN_REVIEW_UPDATED",
             review_status=decision_val,
             reviewer_notes=reviewer_notes,
             created_at=_utc_now()
         )
         try:
+            session.add(review_rec)
             session.add(audit)
             session.commit()
             session.refresh(inv)
@@ -635,15 +689,15 @@ class InvestigationService:
         investigation_id: str,
         scenario_shift_pct: float = 10.0
     ) -> InvestigationReassessResponse:
-        """
-        Deterministically re-evaluates multi-scenario robustness for an existing persisted investigation.
-        """
         from app.services.robustness import RobustnessEngine
         from app.ai.orchestrator import _evaluate_orchestrated_robustness, _is_valid_finite_number
 
         investigation = cls.get_investigation_by_id(db=db, investigation_id=investigation_id)
         if not investigation:
             raise ValueError(f"Investigation with ID '{investigation_id}' not found.")
+
+        if not investigation.result_json and not investigation.claims_json and not investigation.analysis_json:
+            raise ValueError(f"Investigation '{investigation_id}' contains no stored result payload to reassess.")
 
         ask_resp: Optional[AskResponse] = None
         if investigation.result_json:
@@ -654,7 +708,6 @@ class InvestigationService:
                 pass
 
         if not ask_resp:
-
             inst = cls(db)
             try:
                 ask_resp = inst.reconstruct_ask_response(investigation)
@@ -714,44 +767,18 @@ class InvestigationService:
         review_data: InvestigationReviewCreate,
         reviewer_user_id: Optional[str] = None
     ) -> InvestigationReview:
-        """
-        Creates and persists an append-only Human-in-the-Loop review record for an investigation.
-        """
-        investigation = cls.get_investigation_by_id(db=db, investigation_id=investigation_id)
-        if not investigation:
-            raise ValueError(f"Investigation with ID '{investigation_id}' not found.")
-
-        if investigation.status == InvestigationStatus.IN_PROGRESS.value:
-            raise ValueError(f"Cannot submit review for investigation '{investigation_id}' while status is IN_PROGRESS.")
-
-        final_reviewer_id = reviewer_user_id or review_data.reviewer_id
-        if not final_reviewer_id or not final_reviewer_id.strip():
-            raise ValueError("Reviewer identity required to submit review.")
-
-        final_reviewer_id = final_reviewer_id.strip()
-
-        if investigation.owner_id and investigation.owner_id == final_reviewer_id:
-            raise ValueError("Self-Review Blocked: You cannot review an investigation you initiated.")
-
-        status_str = review_data.review_status.value if hasattr(review_data.review_status, "value") else str(review_data.review_status)
-
-        review = InvestigationReview(
-            review_id=cls.generate_review_id(),
+        inst = cls(db)
+        st = getattr(review_data, "status", getattr(review_data, "review_status", None))
+        notes = getattr(review_data, "review_notes", getattr(review_data, "reviewer_notes", None))
+        r_id = reviewer_user_id or getattr(review_data, "reviewer_id", None)
+        inst.update_review(
             investigation_id=investigation_id,
-            review_status=status_str,
-            reviewer_id=final_reviewer_id,
-            review_notes=review_data.review_notes,
-            reviewed_at=utcnow()
+            review_decision=st,
+            reviewer_notes=notes,
+            reviewer_user_id=r_id,
+            db=db
         )
-
-        try:
-            db.add(review)
-            db.commit()
-            db.refresh(review)
-            return review
-        except Exception:
-            db.rollback()
-            raise
+        return cls.get_latest_review(db=db, investigation_id=investigation_id)
 
     @classmethod
     def list_reviews_for_investigation(

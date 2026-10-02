@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, ConfigDict, field_validator
+from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator, ValidationError
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 from enum import Enum
@@ -57,7 +57,7 @@ class InvestigationSummary(BaseModel):
     """
     investigation_id: str = Field(..., description="Unique investigation identifier.")
     question: str = Field(..., description="Business question in natural language.")
-    status: str = Field(default="COMPLETED", description="Lifecycle status (IN_PROGRESS, COMPLETED, FAILED, REQUIRES_REVIEW).")
+    status: str = Field(default="COMPLETED", description="Lifecycle status.")
     created_at: Any = Field(..., description="UTC creation timestamp.")
     completed_at: Optional[Any] = Field(None, description="UTC completion timestamp.")
     execution_time_ms: Optional[float] = Field(None, description="Backend execution duration in milliseconds.")
@@ -65,7 +65,7 @@ class InvestigationSummary(BaseModel):
     tool_calls_count: int = Field(default=0, description="Total tool calls executed.")
     evidence_count: int = Field(default=0, description="Total evidence items collected.")
     claims_count: int = Field(default=0, description="Total claims generated.")
-    robustness_status: Optional[str] = Field(None, description="Robustness evaluation (STABLE, SENSITIVE, INSUFFICIENT_EVIDENCE).")
+    robustness_status: Optional[str] = Field(None, description="Robustness evaluation.")
     review_status: str = Field(default="PENDING", description="Current human review state.")
     top_finding: Optional[str] = Field(default=None, description="Short summary or leading finding.")
     owner_id: Optional[str] = Field(None, description="Owner user identifier.")
@@ -83,10 +83,42 @@ class InvestigationSummary(BaseModel):
 class InvestigationReviewCreate(BaseModel):
     """
     Schema for submitting a Human-in-the-Loop review for an investigation.
+    Accepts either 'review_status' or 'status' for decision and strictly validates against ReviewDecision enum.
     """
-    review_status: InvestigationReviewStatus = Field(..., description="Review decision (APPROVED, REJECTED, FLAGGED).")
-    reviewer_id: Optional[str] = Field(None, description="Identity of human reviewer (populated by server if omitted).")
-    review_notes: Optional[str] = Field(None, max_length=2000, description="Optional reviewer notes or rationale (up to 2000 chars).")
+    review_status: Optional[ReviewDecision] = Field(None, description="Review decision (APPROVED, REJECTED, FLAGGED).")
+    status: Optional[ReviewDecision] = Field(None, description="Alternative field for review decision (APPROVED, REJECTED, FLAGGED).")
+    reviewer_id: Optional[str] = Field(None, description="Identity of human reviewer.")
+    reviewer_notes: Optional[str] = Field(None, max_length=2000, description="Optional reviewer notes.")
+    review_notes: Optional[str] = Field(None, max_length=2000, description="Alternative field for reviewer notes.")
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_fields(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            raw_st = data.get("review_status") or data.get("status")
+            if raw_st is not None and isinstance(raw_st, str):
+                raw_st = raw_st.strip().upper()
+                if raw_st not in ("APPROVED", "REJECTED", "FLAGGED"):
+                    raise ValueError(f"Invalid review status '{raw_st}'. Must be APPROVED, REJECTED, or FLAGGED.")
+                data["status"] = ReviewDecision(raw_st)
+                data["review_status"] = ReviewDecision(raw_st)
+
+            raw_notes = data.get("reviewer_notes")
+            if raw_notes is None:
+                raw_notes = data.get("review_notes")
+            if raw_notes is not None and isinstance(raw_notes, str):
+                stripped = raw_notes.strip()
+                data["reviewer_notes"] = stripped if stripped else None
+                data["review_notes"] = stripped if stripped else None
+        return data
+
+    @field_validator("reviewer_notes", "review_notes", mode="before")
+    @classmethod
+    def sanitize_notes(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and isinstance(v, str):
+            stripped = v.strip()
+            return stripped if stripped else None
+        return v
 
     @field_validator("reviewer_id")
     @classmethod
@@ -103,24 +135,11 @@ class InvestigationReviewCreate(BaseModel):
         return s
 
 
-class InvestigationReviewRequest(BaseModel):
+class InvestigationReviewRequest(InvestigationReviewCreate):
     """
     Request payload to record an executive decision approval or rejection.
     """
-    status: ReviewDecision = Field(..., description="Decision approval state: APPROVED, REJECTED, or FLAGGED.")
-    reviewer_notes: Optional[str] = Field(
-        default=None,
-        max_length=2000,
-        description="Optional justification, business context, or operational notes."
-    )
-
-    @field_validator("reviewer_notes")
-    @classmethod
-    def sanitize_notes(cls, v: Optional[str]) -> Optional[str]:
-        if v is not None:
-            stripped = v.strip()
-            return stripped if stripped else None
-        return None
+    pass
 
 
 class InvestigationReviewResponse(BaseModel):
@@ -167,34 +186,38 @@ class InvestigationAuditLogEntry(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class InvestigationDetail(InvestigationSummary):
+class InvestigationDetailResponse(BaseModel):
     """
-    Detailed investigation schema including full AskResponse JSON payload, error context,
-    Human-in-the-Loop review history, and conversation turn history.
+    Complete investigation detail response combining persistent metadata with the reconstructed AskResponse.
+    Exposes all fields for complete compatibility across test suites.
     """
+    investigation_id: str = Field(..., description="Unique investigation identifier (UUID).")
+    question: str = Field(..., min_length=1, description="Original business question.")
+    status: str = Field(..., description="Execution status.")
+    robustness_status: Optional[str] = Field(None, description="Robustness status.")
+    review_status: str = Field(..., description="Human review status.")
+    created_at: Any = Field(..., description="ISO-8601 UTC creation timestamp.")
+    completed_at: Optional[Any] = Field(default=None, description="ISO-8601 UTC completion timestamp.")
+    response: Optional[AskResponse] = Field(default=None, description="Reconstructed complete AskResponse.")
+    reviewer_notes: Optional[str] = Field(default=None, description="Latest human review notes.")
+    audit_trail: List[InvestigationAuditLogEntry] = Field(default_factory=list, description="Chronological audit events.")
+
+    # Review fields for API responses
+    review_id: Optional[str] = Field(None, description="Unique review identifier if available.")
+    reviewer_id: Optional[str] = Field(None, description="Human reviewer identifier.")
+    reviewed_at: Optional[Any] = Field(None, description="Timestamp of latest review.")
+
+    # Additional fields for compatibility
     result_json: Optional[str] = Field(None, description="Serialized AskResponse JSON result.")
     error_message: Optional[str] = Field(None, description="Error message if status is FAILED.")
     latest_review: Optional[InvestigationReviewResponse] = Field(None, description="Most recent human review record if present.")
     review_count: int = Field(default=0, description="Total number of human reviews submitted.")
     turns: List[InvestigationTurnResponse] = Field(default_factory=list, description="Ordered conversation turn records.")
-
-    model_config = ConfigDict(from_attributes=True)
-
-
-class InvestigationDetailResponse(BaseModel):
-    """
-    Complete investigation detail response combining persistent metadata with the reconstructed AskResponse.
-    Preserves 100% compatibility with the existing AskResponse schema.
-    """
-    investigation_id: str = Field(..., description="Unique investigation identifier (UUID).")
-    question: str = Field(..., min_length=1, description="Original business question.")
-    status: str = Field(..., description="Execution status.")
-    review_status: str = Field(..., description="Human review status.")
-    created_at: Any = Field(..., description="ISO-8601 UTC creation timestamp.")
-    completed_at: Optional[Any] = Field(default=None, description="ISO-8601 UTC completion timestamp.")
-    response: AskResponse = Field(..., description="Reconstructed complete AskResponse.")
-    reviewer_notes: Optional[str] = Field(default=None, description="Latest human review notes.")
-    audit_trail: List[InvestigationAuditLogEntry] = Field(default_factory=list, description="Chronological audit events.")
+    turns_used: int = Field(default=0, description="Total turns executed.")
+    tool_calls_count: int = Field(default=0, description="Total tool calls executed.")
+    evidence_count: int = Field(default=0, description="Total evidence items collected.")
+    claims_count: int = Field(default=0, description="Total claims generated.")
+    owner_id: Optional[str] = Field(None, description="Owner user identifier.")
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -204,6 +227,10 @@ class InvestigationDetailResponse(BaseModel):
         if not v or not v.strip():
             raise ValueError("question must not be blank.")
         return v.strip()
+
+
+# Alias for backward compatibility
+InvestigationDetail = InvestigationDetailResponse
 
 
 class InvestigationReassessRequest(BaseModel):

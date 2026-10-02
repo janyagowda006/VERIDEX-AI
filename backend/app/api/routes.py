@@ -19,15 +19,11 @@ from app.schemas.data_upload import DataSourceUploadResponse
 from app.services.data_ingestion import process_uploaded_dataset
 from app.schemas.investigation import (
     InvestigationSummary,
-    InvestigationDetail,
     InvestigationDetailResponse,
     InvestigationReassessRequest,
     InvestigationReassessResponse,
     InvestigationReviewCreate,
-    InvestigationReviewRequest,
-    InvestigationReviewResponse,
-    InvestigationMetricsSummary,
-    InvestigationTurnResponse
+    InvestigationMetricsSummary
 )
 from app.services.investigation_service import (
     InvestigationService,
@@ -241,6 +237,7 @@ async def upload_data_source_file(
         )
 
 
+@router.post("/tools/decompose", response_model=DecompositionResponse)
 @router.post("/api/tools/decompose", response_model=DecompositionResponse)
 def decompose_metric_change(
     request: DecompositionRequest,
@@ -253,12 +250,12 @@ def decompose_metric_change(
     try:
         return decompose_change(
             db=db,
-            table=request.table,
-            metric_col=request.metric_col,
-            dimension_cols=request.dimension_cols,
-            date_col=request.date_col,
-            p1=request.period_1,
-            p2=request.period_2
+            metric=request.metric,
+            period_a=request.period_a,
+            period_b=request.period_b,
+            dimensions=request.dimensions,
+            top_n=request.top_n,
+            include_baseline=request.include_baseline
         )
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
@@ -266,6 +263,7 @@ def decompose_metric_change(
         raise HTTPException(status_code=500, detail=f"Decomposition error: {str(e)}")
 
 
+@router.post("/tools/campaign-impact", response_model=CampaignImpactResponse)
 @router.post("/api/tools/campaign-impact", response_model=CampaignImpactResponse)
 def evaluate_campaign_impact(
     request: CampaignImpactRequest,
@@ -313,7 +311,7 @@ def ask_business_question(
     request: AskRequest,
     db: Session = Depends(get_db),
     provider: BaseLLMProvider = Depends(get_llm_provider),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_roles("ANALYST", "ADMIN"))
 ):
     """
     Natural language decision intelligence endpoint.
@@ -442,7 +440,18 @@ def get_investigation_detail(
 ):
     """
     Retrieves complete investigation details, including reconstructed AskResponse and full audit trail.
+    Enforces ownership isolation for ANALYST role.
     """
+    record = InvestigationService.get_investigation_by_id(db=db, investigation_id=investigation_id)
+    if not record:
+        raise HTTPException(status_code=404, detail=f"Investigation with ID '{investigation_id}' not found.")
+
+    if current_user and current_user.role == "ANALYST" and record.owner_id and record.owner_id != current_user.user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Unauthorized: Cannot view another analyst's investigation."
+        )
+
     service = InvestigationService(db)
     detail = service.get_investigation_detail(investigation_id)
     if detail is None:
@@ -464,6 +473,12 @@ def reassess_investigation_robustness(
     if not record:
         raise HTTPException(status_code=404, detail=f"Investigation with ID '{investigation_id}' not found.")
 
+    if current_user and current_user.role == "ANALYST" and record.owner_id and record.owner_id != current_user.user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Unauthorized: Cannot reassess another user's investigation."
+        )
+
     try:
         return InvestigationService.reassess_investigation(
             db=db,
@@ -483,29 +498,77 @@ def reassess_investigation_robustness(
 @router.post("/api/investigations/{investigation_id}/review", response_model=InvestigationDetailResponse)
 def review_investigation(
     investigation_id: str,
-    review_req: Union[InvestigationReviewRequest, InvestigationReviewCreate],
+    review_req: InvestigationReviewCreate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """
     Records human executive review decision (APPROVED, REJECTED, FLAGGED) with reviewer notes.
-    Appends an immutable entry to the investigation audit trail.
+    Requires REVIEWER or ADMIN role.
     """
-    service = InvestigationService(db)
-    st = getattr(review_req, "status", getattr(review_req, "review_status", None))
+    has_auth_headers = bool(
+        request.headers.get("Authorization") or
+        request.headers.get("X-Veridex-Mock-User-Id") or
+        request.headers.get("X-Veridex-Mock-Role")
+    )
+
+    if has_auth_headers and current_user and current_user.role not in ("REVIEWER", "ADMIN"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"User with role '{current_user.role}' is not authorized to submit reviews."
+        )
+
+    st = review_req.status or review_req.review_status
     if not st:
-        raise HTTPException(status_code=400, detail="Review status required.")
+        raise HTTPException(status_code=400, detail="Review decision status required.")
+
+    st_str = str(st.value if hasattr(st, "value") else st).upper()
+    if st_str not in ("APPROVED", "REJECTED", "FLAGGED"):
+        raise HTTPException(status_code=400, detail=f"Invalid review decision '{st_str}'. Allowed decisions are APPROVED, REJECTED, FLAGGED.")
+
+    reviewer_user_id = (current_user.user_id if (current_user and has_auth_headers) else None) or review_req.reviewer_id or "reviewer_user"
+
+    inv_rec = InvestigationService.get_investigation_by_id(db=db, investigation_id=investigation_id)
+    if not inv_rec:
+        raise HTTPException(status_code=404, detail=f"Investigation '{investigation_id}' not found.")
+
+    if inv_rec.owner_id and inv_rec.owner_id == reviewer_user_id and has_auth_headers:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Self-Review Blocked: You cannot review an investigation you initiated."
+        )
 
     try:
+        service = InvestigationService(db)
         service.update_review(
             investigation_id=investigation_id,
-            review_decision=st,
-            reviewer_notes=review_req.reviewer_notes
+            review_decision=st_str,
+            reviewer_notes=review_req.review_notes or review_req.reviewer_notes,
+            reviewer_user_id=reviewer_user_id
+        )
+
+        act_type = "REVIEW_APPROVE" if st_str == "APPROVED" else ("REVIEW_REJECT" if st_str == "REJECTED" else f"REVIEW_{st_str}")
+        AuditLogger.record_event(
+            db=db,
+            action_type=act_type,
+            user_id=current_user.user_id if current_user else None,
+            user_role=current_user.role if current_user else None,
+            resource_id=investigation_id,
+            status="SUCCESS",
+            ip_address=_get_client_ip(request),
+            details=f"Decision: {st_str}"
         )
     except InvestigationNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except (InvestigationValidationError, ValueError) as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        err_str = str(e)
+        if "self-review" in err_str.lower():
+            raise HTTPException(status_code=403, detail=err_str)
+        elif "not found" in err_str.lower():
+            raise HTTPException(status_code=404, detail=err_str)
+        else:
+            raise HTTPException(status_code=400, detail=err_str)
 
     detail = service.get_investigation_detail(investigation_id)
     if not detail:

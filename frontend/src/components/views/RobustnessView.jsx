@@ -75,8 +75,22 @@ const fmt = (x) => x.toFixed(2);
  * VERIDEX Page 8: Robustness Analysis View
  * Reconstructed with 100% exact visual, structural, mathematical, and behavioral fidelity to veridex-prototype-v2.html P["robustness"].
  */
-export function RobustnessView({ onNavigate }) {
-  const [selectedStatus, setSelectedStatus] = useState('STABLE');
+export function RobustnessView({
+  data,
+  useMock = true,
+  currentUser,
+  onNavigate,
+  onSelectInvestigation
+}) {
+  const [selectedStatus, setSelectedStatus] = useState(() => {
+    return data?.analysis?.robustness?.status || 'STABLE';
+  });
+
+  useEffect(() => {
+    if (data?.analysis?.robustness?.status) {
+      setSelectedStatus(data.analysis.robustness.status);
+    }
+  }, [data]);
 
   useEffect(() => {
     document.title = 'VERIDEX — Robustness Analysis';

@@ -432,6 +432,16 @@ function App() {
 
           {(activeView === 'workspace' || activeView === 'ask') && (
             <WorkspaceView
+              data={data}
+              loading={loading}
+              error={error}
+              onRunInvestigation={handleRunInvestigation}
+              activeInvestigationId={activeInvestigationId}
+              currentUser={currentUser}
+              useMock={useMock}
+              turns={turns}
+              activeTurnNumber={activeTurnNumber}
+              onSelectTurn={handleSelectTurn}
               onNavigate={setActiveView}
             />
           )}

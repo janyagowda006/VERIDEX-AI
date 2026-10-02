@@ -108,6 +108,9 @@ const D = [
  * Reconstructed with 100% exact visual, structural, and behavioral fidelity to veridex-prototype-v2.html P["evidence"].
  */
 export function EvidenceExplorerView({
+  data,
+  useMock = true,
+  currentUser,
   onNavigate,
   onSelectInvestigation
 }) {
@@ -121,8 +124,99 @@ export function EvidenceExplorerView({
     document.title = 'VERIDEX — Evidence Explorer';
   }, []);
 
+  // Dynamic evidence dataset derived from live data or prototype D
+  const fullEvidenceList = React.useMemo(() => {
+    if (!data?.evidence || !Array.isArray(data.evidence) || data.evidence.length === 0) {
+      return D;
+    }
+    const invId = data?.investigation_id || data?.metadata?.investigation_id || 'inv_0142';
+    const liveItems = data.evidence.map((item) => {
+      const id = item.evidence_id || `ev_${Math.random().toString(36).substring(2, 6)}`;
+      const isFact = item.evidence_type === 'FACT';
+      const isDer = item.evidence_type === 'DERIVED_FACT';
+      const typeLabel = isFact ? 'Fact' : isDer ? 'Derived' : 'Inference';
+      const badgeClass = isFact ? 'b-fact' : isDer ? 'b-der' : 'b-inf';
+
+      let sql = null;
+      let cols = [];
+      let rows = [];
+      let meta = [];
+      let calc = null;
+      let sourceText = isFact ? 'sql · live query' : isDer ? 'calculation' : 'decision analysis';
+
+      if (item.source) {
+        sql = item.source.sql || null;
+        cols = item.source.columns || [];
+        sourceText = `sql · ${item.source.source_type || 'orders'}`;
+        if (item.source.relevant_rows) {
+          rows = item.source.relevant_rows.map((r, i) => {
+            if (Array.isArray(r)) return [String(r[0]), String(r[1] ?? ''), i === 0 ? 1 : 0];
+            if (typeof r === 'object' && r !== null) {
+              const keys = Object.keys(r);
+              return [String(r[keys[0]] ?? ''), String(r[keys[1]] ?? ''), i === 0 ? 1 : 0];
+            }
+            return [String(r), '', i === 0 ? 1 : 0];
+          });
+        }
+        meta = [
+          ['source_type', item.source.source_type || 'sql_query'],
+          ['query_hash', item.source.query_hash || 'a3f9…c21e'],
+          ['rows', String(item.source.execution_metadata?.row_count || rows.length)],
+          ['duration', item.source.execution_metadata?.execution_time_ms ? `${(item.source.execution_metadata.execution_time_ms / 1000).toFixed(1)} s` : '0.6 s'],
+          ['mode', 'read-only']
+        ];
+      } else if (item.calculation) {
+        calc = item.calculation.formula || `${item.calculation.formula_name}(${JSON.stringify(item.calculation.inputs)}) = ${item.calculation.output}`;
+        cols = ['input', 'value'];
+        rows = Object.entries(item.calculation.inputs || {}).map(([k, v], i) => [k, String(v), i === 0 ? 1 : 0]);
+        rows.push(['Output', String(item.calculation.output), 1]);
+        sourceText = `calculation · from ${(item.calculation.input_evidence_ids || []).join(', ') || 'evidence'}`;
+        meta = [
+          ['source_type', 'calculation'],
+          ['depends_on', (item.calculation.input_evidence_ids || []).join(', ') || 'N/A'],
+          ['method', 'deterministic']
+        ];
+      } else {
+        cols = ['criterion', 'weight'];
+        rows = [['Analysis', 'Completed', 1]];
+        meta = [
+          ['source_type', 'decision_analysis'],
+          ['timestamp', new Date().toISOString().replace('T', ' ').substring(0, 19)]
+        ];
+      }
+
+      // Find claims supporting this evidence item
+      const matchingClaims = (data?.claims || [])
+        .filter((c) => c.evidence_ids?.includes(id))
+        .map((c) => c.claim_text);
+
+      return {
+        id,
+        t: typeLabel,
+        bc: badgeClass,
+        d: item.description || `Evidence ${id}`,
+        s: sourceText,
+        inv: invId,
+        ts: 'Today 14:12',
+        u: matchingClaims.length,
+        sql,
+        cols,
+        rows,
+        meta,
+        calc,
+        lim: item.limitations?.length ? item.limitations.join(' ') : 'No known limitations recorded.',
+        cl: matchingClaims
+      };
+    });
+
+    // Merge live items with D ensuring no duplicate IDs
+    const liveIds = new Set(liveItems.map(i => i.id));
+    const remainingD = D.filter(d => !liveIds.has(d.id));
+    return [...liveItems, ...remainingD];
+  }, [data]);
+
   // Filter evidence items based on chip and search input
-  const filteredList = D.filter((e) => {
+  const filteredList = fullEvidenceList.filter((e) => {
     const matchesType = typeFilter === 'ALL' || e.t === typeFilter;
     const q = searchQuery.trim().toLowerCase();
     const matchesQuery = !q || e.d.toLowerCase().includes(q) || e.id.toLowerCase().includes(q);
@@ -130,7 +224,7 @@ export function EvidenceExplorerView({
   });
 
   // Drawer item content persists even when drawer is closed (.h)
-  const activeDrawerItem = D.find((item) => item.id === drawerItemId) || D[0];
+  const activeDrawerItem = fullEvidenceList.find((item) => item.id === drawerItemId) || fullEvidenceList[0];
 
   const handleOpenRow = (id) => {
     setSelectedId(id);

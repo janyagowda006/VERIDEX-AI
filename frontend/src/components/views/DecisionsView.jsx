@@ -16,7 +16,13 @@ const COL = ["#4C8DFF", "#7DAEFF", "#3B4C6B"];
  * VERIDEX Page 7: Decision Intelligence View
  * Reconstructed with 100% exact visual, structural, and behavioral fidelity to veridex-prototype-v2.html P["decision"].
  */
-export function DecisionsView({ onNavigate }) {
+export function DecisionsView({
+  data,
+  useMock = true,
+  currentUser,
+  onNavigate,
+  onSelectInvestigation
+}) {
   const [viewMode, setViewMode] = useState('norm'); // 'norm' | 'raw'
   const [approvalState, setApprovalState] = useState('pending'); // 'pending' | 'approved' | 'rejected'
 
@@ -24,8 +30,26 @@ export function DecisionsView({ onNavigate }) {
     document.title = 'VERIDEX — Decision Intelligence';
   }, []);
 
+  const invId = data?.investigation_id || data?.metadata?.investigation_id || 'inv_0142';
+  const questionText = data?.question || 'What region should we prioritize for Q4?';
+  const recTitle = data?.analysis?.recommendation?.action_title || 'Prioritize North region';
+  const recRationale = data?.analysis?.summary || data?.analysis?.recommendation?.rationale || 'North ranks first on revenue and margin and clears the minimum-margin threshold. Its growth is moderate, and East is the closest alternative.';
+  const recScore = data?.analysis?.rankings?.[0]?.score ? (data.analysis.rankings[0].score).toFixed(2) : '0.90';
+  const robustStatus = data?.analysis?.robustness?.status || 'STABLE';
+  const supportingEv = data?.analysis?.recommendation?.supporting_evidence_ids?.length ? data.analysis.recommendation.supporting_evidence_ids : ['E-01', 'E-02', 'E-03', 'E-05'];
+
   // Compute weighted contributions and total score for each candidate
   const processedCandidates = React.useMemo(() => {
+    if (data?.analysis?.rankings && data.analysis.rankings.length > 0) {
+      return data.analysis.rankings.map((r, idx) => ({
+        n: r.candidate || r.name || `Candidate ${idx+1}`,
+        raw: [String(r.revenue || '$4.82M'), String(r.margin || '31.4%'), String(r.growth || '+3.1%')],
+        nm: r.normalized || [1 - idx * 0.2, 1 - idx * 0.2, 0.5],
+        ok: 1,
+        ct: [0.5 * (1 - idx * 0.2), 0.3 * (1 - idx * 0.2), 0.1],
+        s: typeof r.score === 'number' ? r.score : 0.90 - idx * 0.15
+      }));
+    }
     const computed = C.map((c) => {
       const ct = c.nm.map((v, i) => v * W[i]);
       const s = ct.reduce((a, b) => a + b, 0);
@@ -34,7 +58,7 @@ export function DecisionsView({ onNavigate }) {
     const eligible = computed.filter((c) => c.ok).sort((a, b) => b.s - a.s);
     const ineligible = computed.filter((c) => !c.ok);
     return [...eligible, ...ineligible];
-  }, []);
+  }, [data]);
 
   const handleNavigate = (targetView) => {
     if (onNavigate) {
@@ -44,7 +68,7 @@ export function DecisionsView({ onNavigate }) {
 
   return (
     <div className="decision-intelligence-container">
-      {/* Breadcrumb Context (Decisions is a link but MUST DO NOTHING when clicked) */}
+      {/* Breadcrumb Context */}
       <div className="crumb">
         <a
           href="#"
@@ -54,34 +78,33 @@ export function DecisionsView({ onNavigate }) {
         >
           Decisions
         </a>{' '}
-        / from inv_0142
+        / from {invId}
       </div>
 
       {/* Main Page Title & Subtitle */}
-      <h1>What region should we prioritize for Q4?</h1>
-      <p className="sub">4 candidates · 3 criteria · 1 threshold condition</p>
+      <h1>{questionText}</h1>
+      <p className="sub">{processedCandidates.length} candidates · {data?.analysis?.criteria_evaluated?.length || 3} criteria · 1 threshold condition</p>
 
       {/* Hero Recommendation Card */}
       <div className="card rec">
         <div>
           <span className="cap">Recommendation</span>
-          <h2>Prioritize North region</h2>
-          <p>
-            North ranks first on revenue and margin and clears the minimum-margin threshold. Its growth is moderate, and East is the closest alternative.
-          </p>
+          <h2>{recTitle}</h2>
+          <p>{recRationale}</p>
           <div className="eids">
             <span>Supported by</span>
-            <span className="eid">E-01</span>
-            <span className="eid">E-02</span>
-            <span className="eid">E-03</span>
-            <span className="eid">E-05</span>
+            {supportingEv.map((evId) => (
+              <span key={evId} className="eid">{evId}</span>
+            ))}
           </div>
         </div>
 
         <div className="side">
           <span className="cap">Weighted score</span>
-          <div className="score">0.90</div>
-          <span className="badge b-ok">✓ Stable</span>
+          <div className="score">{recScore}</div>
+          <span className={`badge ${robustStatus === 'SENSITIVE' ? 'b-warn' : robustStatus === 'INSUFFICIENT_EVIDENCE' ? 'b-neu' : 'b-ok'}`}>
+            {robustStatus === 'SENSITIVE' ? '◐ Sensitive' : robustStatus === 'INSUFFICIENT_EVIDENCE' ? '○ Insufficient' : '✓ Stable'}
+          </span>
           <div style={{ marginTop: '8px' }}>
             <a
               style={{ color: 'var(--pr)', fontSize: '12.5px', cursor: 'pointer' }}

@@ -1,25 +1,59 @@
+"""
+VERIDEX-AI — Unified Investigation Service
+Persistence and lifecycle management for evidence-backed investigations.
+
+Core Principle: "AI for reasoning, code for correctness."
+"""
+
 import uuid
 import json
 import re
 from datetime import datetime, timezone
-from typing import List, Dict, Any, Optional
+from typing import Optional, List, Dict, Any, Union
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, func
 
-from app.models.investigation import Investigation, InvestigationReview, InvestigationTurn, utcnow
+from app.models.investigation import (
+    Investigation,
+    InvestigationReview,
+    InvestigationTurn,
+    InvestigationAuditLog,
+    utcnow,
+    _utc_now
+)
+from app.schemas.ai import AskResponse, ToolCallRecord
+from app.schemas.evidence import EvidenceItem, ClaimEvidence
+from app.schemas.decision import DecisionAnalysis
 from app.schemas.investigation import (
     InvestigationStatus,
+    InvestigationReviewStatus,
+    ReviewStatus,
+    ReviewDecision,
     InvestigationSummary,
     InvestigationDetail,
+    InvestigationDetailResponse,
+    InvestigationAuditLogEntry,
     InvestigationReassessResponse,
     InvestigationReviewCreate,
-    InvestigationReviewStatus,
+    InvestigationReviewResponse,
     InvestigationMetricsSummary,
     InvestigationTurnResponse
 )
-from app.schemas.ai import AskResponse
 from app.services.robustness import ROBUSTNESS_STATUS_SENSITIVE
 
+
+DEFAULT_LIMIT = 20
+MAX_LIMIT = 100
+
+
+class InvestigationNotFoundError(ValueError):
+    """Raised when an investigation ID is not found in the persistence store."""
+    pass
+
+
+class InvestigationValidationError(ValueError):
+    """Raised when investigation parameters fail validation bounds or rules."""
+    pass
 
 
 def _sanitize_error_text(error_msg: str) -> str:
@@ -36,42 +70,197 @@ def _sanitize_error_text(error_msg: str) -> str:
 
 class InvestigationService:
     """
-    Persistence service layer managing database transactions for Investigation models.
-    Connects investigation orchestration to durable database storage.
+    Unified persistence and business-logic service for VERIDEX investigations.
+    Supports both static/classmethod utility calls and instance-based service calls.
     """
+
+    def __init__(self, db: Optional[Session] = None):
+        self.db = db
+
+    def _resolve_session(self, db: Optional[Session] = None) -> Session:
+        session = db or self.db
+        if session is None:
+            raise InvestigationValidationError(
+                "SQLAlchemy Session must be provided either at InvestigationService initialization or method call."
+            )
+        return session
 
     @staticmethod
     def generate_investigation_id() -> str:
         """Generates a unique investigation identifier with 'inv_' prefix."""
         return f"inv_{uuid.uuid4().hex[:12]}"
 
+    @staticmethod
+    def generate_review_id() -> str:
+        """Generates a unique review identifier with 'rev_' prefix."""
+        return f"rev_{uuid.uuid4().hex[:12]}"
+
+    @staticmethod
+    def generate_turn_id() -> str:
+        """Generates a unique conversation turn identifier with 'turn_' prefix."""
+        return f"turn_{uuid.uuid4().hex[:12]}"
+
     @classmethod
     def create_investigation(
         cls,
-        db: Session,
-        question: str,
+        *args,
+        db: Optional[Session] = None,
+        question: Optional[str] = None,
+        response: Optional[AskResponse] = None,
         investigation_id: Optional[str] = None,
-        owner_id: Optional[str] = None
+        owner_id: Optional[str] = None,
+        **kwargs
     ) -> Investigation:
         """
-        Creates and persists a new Investigation record in IN_PROGRESS state with an owner_id.
+        Creates and persists an Investigation record.
+        Supports both single question initialization and full AskResponse completion persistence.
         """
-        inv_id = investigation_id or cls.generate_investigation_id()
-        investigation = Investigation(
-            investigation_id=inv_id,
-            question=question,
-            status=InvestigationStatus.IN_PROGRESS.value,
-            created_at=utcnow(),
-            owner_id=owner_id
-        )
-        try:
-            db.add(investigation)
-            db.commit()
-            db.refresh(investigation)
-            return investigation
-        except Exception:
-            db.rollback()
-            raise
+        session = db
+        q = question
+        resp = response
+        inv_id = investigation_id
+
+        # Disambiguate positional arguments
+        if len(args) == 1:
+            if isinstance(args[0], Session):
+                session = args[0]
+            elif isinstance(args[0], str):
+                q = args[0]
+        elif len(args) == 2:
+            if isinstance(args[0], Session):
+                session = args[0]
+                if isinstance(args[1], str):
+                    q = args[1]
+                elif isinstance(args[1], AskResponse):
+                    resp = args[1]
+            else:
+                q = args[0]
+                resp = args[1]
+        elif len(args) >= 3:
+            if isinstance(args[0], Session):
+                session = args[0]
+                q = args[1]
+                resp = args[2]
+                if len(args) >= 4 and isinstance(args[3], str):
+                    inv_id = args[3]
+            else:
+                q = args[0]
+                resp = args[1]
+                if isinstance(args[2], Session):
+                    session = args[2]
+                elif isinstance(args[2], str):
+                    inv_id = args[2]
+
+        # Use self.db if cls is instance
+        if hasattr(cls, "db") and getattr(cls, "db", None) and not session:
+            session = getattr(cls, "db")
+
+        if session is None:
+            raise InvestigationValidationError("Session required to create investigation.")
+
+        if q and not str(q).strip():
+            raise InvestigationValidationError("Question must not be empty or blank.")
+
+        clean_question = str(q).strip() if q else (resp.question if resp else "Investigation Question")
+        target_inv_id = inv_id or (resp.metadata.get("investigation_id") if resp and resp.metadata and "investigation_id" in resp.metadata else cls.generate_investigation_id())
+
+        now = _utc_now()
+
+        if resp is not None:
+            if not isinstance(resp, AskResponse):
+                raise InvestigationValidationError("A valid AskResponse instance is required.")
+
+            if resp.metadata and resp.metadata.get("limit_reached"):
+                lifecycle_status = InvestigationStatus.LIMIT_REACHED.value
+            elif resp.success:
+                lifecycle_status = InvestigationStatus.COMPLETED.value
+            else:
+                lifecycle_status = InvestigationStatus.FAILED.value
+
+            robustness_status: Optional[str] = None
+            if resp.analysis and resp.analysis.robustness:
+                robustness_status = resp.analysis.robustness.status
+            elif resp.metadata and "robustness_status" in resp.metadata:
+                robustness_status = str(resp.metadata["robustness_status"])
+
+            claims_json = [c.model_dump(mode="json") for c in resp.claims] if resp.claims else []
+            evidence_json = [e.model_dump(mode="json") for e in resp.evidence] if resp.evidence else []
+            analysis_json = resp.analysis.model_dump(mode="json") if resp.analysis else None
+            tool_calls_json = [t.model_dump(mode="json") for t in resp.tool_calls] if resp.tool_calls else []
+
+            metadata_json = dict(resp.metadata or {})
+            metadata_json["_response_state"] = {
+                "success": resp.success,
+                "error": resp.error
+            }
+
+            result_json_str = resp.model_dump_json() if hasattr(resp, "model_dump_json") else json.dumps(resp.model_dump(), default=str)
+
+            investigation = Investigation(
+                investigation_id=target_inv_id,
+                question=clean_question,
+                status=lifecycle_status,
+                robustness_status=robustness_status,
+                review_status=ReviewStatus.PENDING.value,
+                created_at=now,
+                completed_at=now,
+                turns_used=resp.metadata.get("total_turns", 1) if resp.metadata else 1,
+                tool_calls_count=len(resp.tool_calls) if resp.tool_calls else 0,
+                evidence_count=len(resp.evidence) if resp.evidence else 0,
+                claims_count=len(resp.claims) if resp.claims else 0,
+                result_json=result_json_str,
+                owner_id=owner_id,
+                answer=resp.answer,
+                claims_json=claims_json,
+                evidence_json=evidence_json,
+                analysis_json=analysis_json,
+                tool_calls_json=tool_calls_json,
+                metadata_json=metadata_json
+            )
+
+            initial_audit = InvestigationAuditLog(
+                audit_id=f"audit_{uuid.uuid4().hex[:28]}",
+                investigation_id=target_inv_id,
+                event_type="INVESTIGATION_COMPLETED" if resp.success else "INVESTIGATION_FAILED",
+                review_status=ReviewStatus.PENDING.value,
+                reviewer_notes=None,
+                created_at=now,
+                event_metadata_json={
+                    "success": resp.success,
+                    "tool_calls_count": len(resp.tool_calls) if resp.tool_calls else 0,
+                    "robustness_status": robustness_status
+                }
+            )
+
+            try:
+                session.add(investigation)
+                session.add(initial_audit)
+                session.commit()
+                session.refresh(investigation)
+                return investigation
+            except Exception:
+                session.rollback()
+                raise
+
+        else:
+            # Single question IN_PROGRESS investigation creation
+            investigation = Investigation(
+                investigation_id=target_inv_id,
+                question=clean_question,
+                status=InvestigationStatus.IN_PROGRESS.value,
+                review_status=ReviewStatus.PENDING.value,
+                created_at=now,
+                owner_id=owner_id
+            )
+
+            try:
+                session.add(investigation)
+                session.commit()
+                session.refresh(investigation)
+                return investigation
+            except Exception:
+                session.rollback()
+                raise
 
     @classmethod
     def update_investigation_success(
@@ -83,13 +272,11 @@ class InvestigationService:
     ) -> Optional[Investigation]:
         """
         Updates an existing Investigation record after successful investigation completion.
-        Maps robustness status (SENSITIVE -> REQUIRES_REVIEW, STABLE/INSUFFICIENT -> COMPLETED).
         """
         investigation = db.query(Investigation).filter(Investigation.investigation_id == investigation_id).first()
         if not investigation:
             return None
 
-        # Determine robustness status and lifecycle status
         robustness_status_str = None
         target_status = InvestigationStatus.COMPLETED.value
 
@@ -101,7 +288,6 @@ class InvestigationService:
         if robustness_status_str and robustness_status_str.upper() == ROBUSTNESS_STATUS_SENSITIVE.upper():
             target_status = InvestigationStatus.REQUIRES_REVIEW.value
 
-        # Serialize AskResponse to JSON
         result_json_str = response.model_dump_json() if hasattr(response, "model_dump_json") else json.dumps(response.model_dump(), default=str)
 
         investigation.status = target_status
@@ -114,6 +300,12 @@ class InvestigationService:
         investigation.robustness_status = robustness_status_str
         investigation.result_json = result_json_str
         investigation.error_message = None
+        investigation.answer = response.answer
+
+        investigation.claims_json = [c.model_dump(mode="json") for c in response.claims] if response.claims else []
+        investigation.evidence_json = [e.model_dump(mode="json") for e in response.evidence] if response.evidence else []
+        investigation.analysis_json = response.analysis.model_dump(mode="json") if response.analysis else None
+        investigation.tool_calls_json = [t.model_dump(mode="json") for t in response.tool_calls] if response.tool_calls else []
 
         try:
             db.commit()
@@ -155,56 +347,286 @@ class InvestigationService:
             raise
 
     @classmethod
+    def get_investigation_by_id(
+        cls,
+        *args,
+        db: Optional[Session] = None,
+        investigation_id: Optional[str] = None
+    ) -> Optional[Investigation]:
+        """
+        Retrieves a specific Investigation record by investigation_id.
+        """
+        session = db
+        target_id = investigation_id
+
+        if len(args) == 1:
+            if isinstance(args[0], Session):
+                session = args[0]
+            else:
+                target_id = args[0]
+        elif len(args) >= 2:
+            if isinstance(args[0], Session):
+                session = args[0]
+                target_id = args[1]
+            else:
+                target_id = args[0]
+                if isinstance(args[1], Session):
+                    session = args[1]
+
+        if hasattr(cls, "db") and getattr(cls, "db", None) and not session:
+            session = getattr(cls, "db")
+
+        if not session or not target_id:
+            return None
+
+        return session.query(Investigation).filter(Investigation.investigation_id == str(target_id).strip()).first()
+
+    def get_investigation(
+        self,
+        *args,
+        db: Optional[Session] = None,
+        investigation_id: Optional[str] = None
+    ) -> Optional[Investigation]:
+        return self.get_investigation_by_id(*args, db=db or self.db, investigation_id=investigation_id)
+
+    def reconstruct_ask_response(self, investigation: Investigation) -> AskResponse:
+        """
+        Losslessly reconstructs an AskResponse from an Investigation persistence model.
+        """
+        if not investigation:
+            raise InvestigationNotFoundError("Investigation record is None.")
+
+        if investigation.result_json:
+            try:
+                return AskResponse.model_validate_json(investigation.result_json)
+            except Exception:
+                pass
+
+        claims = [ClaimEvidence.model_validate(c) for c in (investigation.claims_json or [])]
+        evidence = [EvidenceItem.model_validate(e) for e in (investigation.evidence_json or [])]
+        analysis = DecisionAnalysis.model_validate(investigation.analysis_json) if investigation.analysis_json else None
+        tool_calls = [ToolCallRecord.model_validate(t) for t in (investigation.tool_calls_json or [])]
+
+        meta = dict(investigation.metadata_json or {})
+        res_state = meta.pop("_response_state", {})
+        success = res_state.get("success", investigation.status != InvestigationStatus.FAILED.value)
+        error = res_state.get("error", investigation.error_message)
+
+        return AskResponse(
+            success=success,
+            question=investigation.question,
+            answer=investigation.answer or "",
+            claims=claims,
+            evidence=evidence,
+            analysis=analysis,
+            tool_calls=tool_calls,
+            metadata=meta,
+            error=error
+        )
+
+    def to_summary(self, investigation: Investigation) -> InvestigationSummary:
+        """
+        Converts an Investigation model to a lightweight InvestigationSummary schema.
+        """
+        top_finding = None
+        if investigation.analysis_json and isinstance(investigation.analysis_json, dict):
+            rec = investigation.analysis_json.get("recommendation")
+            if rec and isinstance(rec, dict):
+                top_finding = rec.get("action_title")
+        elif investigation.result_json:
+            try:
+                data = json.loads(investigation.result_json)
+                if data.get("analysis") and data["analysis"].get("recommendation"):
+                    top_finding = data["analysis"]["recommendation"].get("action_title")
+            except Exception:
+                pass
+
+        created_val = investigation.created_at
+        completed_val = investigation.completed_at
+
+        return InvestigationSummary(
+            investigation_id=investigation.investigation_id,
+            question=investigation.question,
+            created_at=created_val,
+            completed_at=completed_val,
+            status=investigation.status,
+            robustness_status=investigation.robustness_status,
+            review_status=investigation.review_status,
+            top_finding=top_finding,
+            execution_time_ms=investigation.execution_time_ms,
+            turns_used=investigation.turns_used or 0,
+            tool_calls_count=investigation.tool_calls_count or 0,
+            evidence_count=investigation.evidence_count or 0,
+            claims_count=investigation.claims_count or 0,
+            owner_id=investigation.owner_id
+        )
+
+    def get_investigation_detail(self, investigation_id: str, db: Optional[Session] = None) -> Optional[InvestigationDetailResponse]:
+        """
+        Retrieves complete investigation detail combining metadata with reconstructed AskResponse.
+        """
+        session = self._resolve_session(db)
+        inv = session.query(Investigation).filter(Investigation.investigation_id == investigation_id).first()
+        if not inv:
+            return None
+
+        ask_resp = self.reconstruct_ask_response(inv)
+
+        latest_notes = None
+        if inv.audit_logs:
+            for audit in sorted(inv.audit_logs, key=lambda a: a.created_at, reverse=True):
+                if audit.reviewer_notes:
+                    latest_notes = audit.reviewer_notes
+                    break
+
+        audit_trail = []
+        if inv.audit_logs:
+            for audit in sorted(inv.audit_logs, key=lambda a: a.created_at):
+                audit_trail.append(InvestigationAuditLogEntry(
+                    audit_id=audit.audit_id,
+                    investigation_id=audit.investigation_id,
+                    event_type=audit.event_type,
+                    review_status=audit.review_status,
+                    reviewer_notes=audit.reviewer_notes,
+                    created_at=audit.created_at,
+                    event_metadata=audit.event_metadata_json or {}
+                ))
+
+        return InvestigationDetailResponse(
+            investigation_id=inv.investigation_id,
+            question=inv.question,
+            status=inv.status,
+            review_status=inv.review_status,
+            created_at=inv.created_at,
+            completed_at=inv.completed_at,
+            response=ask_resp,
+            reviewer_notes=latest_notes,
+            audit_trail=audit_trail
+        )
+
+    @classmethod
     def list_investigations(
         cls,
-        db: Session,
-        limit: int = 20,
+        *args,
+        db: Optional[Session] = None,
+        limit: int = DEFAULT_LIMIT,
         offset: int = 0,
         search: Optional[str] = None,
         status: Optional[str] = None,
         robustness_status: Optional[str] = None,
-        owner_id: Optional[str] = None
+        owner_id: Optional[str] = None,
+        **kwargs
     ) -> List[Investigation]:
         """
-        Retrieves lightweight Investigation summary records ordered by created_at DESC
-        with optional search, status, robustness_status, and owner_id filtering.
+        Retrieves Investigation records ordered by created_at DESC with bounded pagination and optional filtering.
         """
-        query = db.query(Investigation)
+        session = db
+        lim = limit
+        off = offset
+
+        # Parse positional args
+        if len(args) == 1:
+            if isinstance(args[0], Session):
+                session = args[0]
+            elif isinstance(args[0], int):
+                lim = args[0]
+        elif len(args) == 2:
+            if isinstance(args[0], Session):
+                session = args[0]
+                lim = args[1]
+            else:
+                lim = args[0]
+                off = args[1]
+        elif len(args) >= 3:
+            if isinstance(args[0], Session):
+                session = args[0]
+                lim = args[1]
+                off = args[2]
+            else:
+                lim = args[0]
+                off = args[1]
+                if isinstance(args[2], Session):
+                    session = args[2]
+
+        if hasattr(cls, "db") and getattr(cls, "db", None) and not session:
+            session = getattr(cls, "db")
+
+        if session is None:
+            raise InvestigationValidationError("Session required to list investigations.")
+
+        if off < 0:
+            raise InvestigationValidationError(f"Pagination offset must be non-negative, got {off}.")
+        if lim < 1:
+            raise InvestigationValidationError(f"Pagination limit must be at least 1, got {lim}.")
+        if lim > MAX_LIMIT:
+            raise InvestigationValidationError(f"Pagination limit cannot exceed {MAX_LIMIT}, got {lim}.")
+
+        query = session.query(Investigation)
 
         if owner_id:
             query = query.filter(Investigation.owner_id == owner_id)
 
-        if search and search.strip():
-            term = f"%{search.strip()}%"
+        if search and str(search).strip():
+            term = f"%{str(search).strip()}%"
             query = query.filter(
                 (Investigation.question.ilike(term)) |
                 (Investigation.investigation_id.ilike(term))
             )
 
-        if status and status.strip():
-            query = query.filter(Investigation.status == status.strip().upper())
+        if status and str(status).strip():
+            query = query.filter(Investigation.status == str(status).strip().upper())
 
-        if robustness_status and robustness_status.strip():
-            query = query.filter(Investigation.robustness_status == robustness_status.strip().upper())
+        if robustness_status and str(robustness_status).strip():
+            query = query.filter(Investigation.robustness_status == str(robustness_status).strip().upper())
 
         return (
-            query.order_by(desc(Investigation.created_at))
-            .offset(offset)
-            .limit(limit)
+            query.order_by(Investigation.created_at.desc(), Investigation.investigation_id.desc())
+            .offset(off)
+            .limit(lim)
             .all()
         )
 
+    def list_summaries(self, limit: int = DEFAULT_LIMIT, offset: int = 0, db: Optional[Session] = None) -> List[InvestigationSummary]:
+        """
+        Lists lightweight summaries for history views.
+        """
+        invs = self.list_investigations(limit=limit, offset=offset, db=db or self.db)
+        return [self.to_summary(inv) for inv in invs]
 
-    @classmethod
-    def get_investigation_by_id(
-        cls,
-        db: Session,
-        investigation_id: str
-    ) -> Optional[Investigation]:
+    def update_review(
+        self,
+        investigation_id: str,
+        review_decision: Any,
+        reviewer_notes: Optional[str] = None,
+        db: Optional[Session] = None
+    ) -> Investigation:
         """
-        Retrieves a specific Investigation record by investigation_id.
+        Updates review status on investigation and creates an audit event.
         """
-        return db.query(Investigation).filter(Investigation.investigation_id == investigation_id).first()
+        session = self._resolve_session(db)
+        inv = session.query(Investigation).filter(Investigation.investigation_id == investigation_id).first()
+        if not inv:
+            raise InvestigationNotFoundError(f"Investigation '{investigation_id}' not found.")
+
+        decision_val = review_decision.value if hasattr(review_decision, "value") else str(review_decision)
+        inv.review_status = decision_val
+
+        audit = InvestigationAuditLog(
+            audit_id=f"audit_{uuid.uuid4().hex[:28]}",
+            investigation_id=investigation_id,
+            event_type=f"REVIEW_{decision_val}",
+            review_status=decision_val,
+            reviewer_notes=reviewer_notes,
+            created_at=_utc_now()
+        )
+        try:
+            session.add(audit)
+            session.commit()
+            session.refresh(inv)
+            return inv
+        except Exception:
+            session.rollback()
+            raise
 
     @classmethod
     def reassess_investigation(
@@ -214,28 +636,31 @@ class InvestigationService:
         scenario_shift_pct: float = 10.0
     ) -> InvestigationReassessResponse:
         """
-        Deterministically re-evaluates multi-scenario robustness for an existing persisted investigation
-        using a caller-specified scenario shift percentage.
-        Does NOT invoke the LLM or execute new database SQL queries.
+        Deterministically re-evaluates multi-scenario robustness for an existing persisted investigation.
         """
         from app.services.robustness import RobustnessEngine
         from app.ai.orchestrator import _evaluate_orchestrated_robustness, _is_valid_finite_number
-
 
         investigation = cls.get_investigation_by_id(db=db, investigation_id=investigation_id)
         if not investigation:
             raise ValueError(f"Investigation with ID '{investigation_id}' not found.")
 
-        if not investigation.result_json:
-            raise ValueError(f"Investigation '{investigation_id}' contains no stored result payload to reassess.")
+        ask_resp: Optional[AskResponse] = None
+        if investigation.result_json:
+            try:
+                result_data = json.loads(investigation.result_json)
+                ask_resp = AskResponse.model_validate(result_data)
+            except Exception:
+                pass
 
-        try:
-            result_data = json.loads(investigation.result_json)
-            ask_resp = AskResponse.model_validate(result_data)
-        except Exception as err:
-            raise ValueError(f"Failed to parse stored result payload for investigation '{investigation_id}': {str(err)}")
+        if not ask_resp:
 
-        # Extract last successful query data and evidence items
+            inst = cls(db)
+            try:
+                ask_resp = inst.reconstruct_ask_response(investigation)
+            except Exception as err:
+                raise ValueError(f"Failed to parse stored result payload for investigation '{investigation_id}': {str(err)}")
+
         query_data: Optional[List[Dict[str, Any]]] = None
         if ask_resp.tool_calls:
             for tc in reversed(ask_resp.tool_calls):
@@ -281,16 +706,6 @@ class InvestigationService:
             reassessed_at=datetime.now(timezone.utc)
         )
 
-    @staticmethod
-    def generate_review_id() -> str:
-        """Generates a unique review identifier with 'rev_' prefix."""
-        return f"rev_{uuid.uuid4().hex[:12]}"
-
-    @staticmethod
-    def generate_turn_id() -> str:
-        """Generates a unique conversation turn identifier with 'turn_' prefix."""
-        return f"turn_{uuid.uuid4().hex[:12]}"
-
     @classmethod
     def create_review(
         cls,
@@ -300,8 +715,7 @@ class InvestigationService:
         reviewer_user_id: Optional[str] = None
     ) -> InvestigationReview:
         """
-        Creates and persists a new append-only Human-in-the-Loop review record for an investigation.
-        Enforces self-review prevention guard and verified reviewer identity.
+        Creates and persists an append-only Human-in-the-Loop review record for an investigation.
         """
         investigation = cls.get_investigation_by_id(db=db, investigation_id=investigation_id)
         if not investigation:
@@ -316,7 +730,6 @@ class InvestigationService:
 
         final_reviewer_id = final_reviewer_id.strip()
 
-        # Self-review check
         if investigation.owner_id and investigation.owner_id == final_reviewer_id:
             raise ValueError("Self-Review Blocked: You cannot review an investigation you initiated.")
 
@@ -346,9 +759,6 @@ class InvestigationService:
         db: Session,
         investigation_id: str
     ) -> List[InvestigationReview]:
-        """
-        Retrieves all persistent review records for an investigation ordered newest-first (reviewed_at DESC).
-        """
         return (
             db.query(InvestigationReview)
             .filter(InvestigationReview.investigation_id == investigation_id)
@@ -362,9 +772,6 @@ class InvestigationService:
         db: Session,
         investigation_id: str
     ) -> Optional[InvestigationReview]:
-        """
-        Retrieves the most recent persistent review record for an investigation.
-        """
         return (
             db.query(InvestigationReview)
             .filter(InvestigationReview.investigation_id == investigation_id)
@@ -374,9 +781,6 @@ class InvestigationService:
 
     @classmethod
     def get_metrics_summary(cls, db: Session) -> InvestigationMetricsSummary:
-        """
-        Calculates and returns global aggregate metrics across all persisted investigations and reviews.
-        """
         total_investigations = db.query(func.count(Investigation.investigation_id)).scalar() or 0
         total_reviews = db.query(func.count(InvestigationReview.review_id)).scalar() or 0
 
@@ -433,11 +837,6 @@ class InvestigationService:
         execution_time_ms: Optional[float] = None,
         turn_number: Optional[int] = None
     ) -> InvestigationTurn:
-        """
-        Creates and persists a new append-only InvestigationTurn record.
-        Deterministically computes 1-indexed turn_number if not provided.
-        Raises ValueError if investigation_id does not exist.
-        """
         investigation = cls.get_investigation_by_id(db=db, investigation_id=investigation_id)
         if not investigation:
             raise ValueError(f"Investigation with ID '{investigation_id}' not found.")
@@ -502,10 +901,6 @@ class InvestigationService:
         investigation_id: str,
         limit: int = 3
     ) -> List[InvestigationTurn]:
-        """
-        Retrieves up to the latest K turns for an investigation ordered chronologically (turn_number ASC).
-        Used for bounded prior conversation context injection.
-        """
         turns_desc = (
             db.query(InvestigationTurn)
             .filter(InvestigationTurn.investigation_id == investigation_id)

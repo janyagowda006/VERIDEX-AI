@@ -27,6 +27,41 @@ from app.schemas.ai import (
     ToolCallRecord
 )
 from app.schemas.audit import AuditLogResponse
+from app.schemas.investigation import (
+    InvestigationStatus,
+    InvestigationReviewStatus,
+    ReviewStatus,
+    ReviewDecision,
+    InvestigationCreate,
+    InvestigationSummary,
+    InvestigationReviewCreate,
+    InvestigationReviewRequest,
+    InvestigationReviewResponse,
+    InvestigationTurnResponse,
+    InvestigationAuditLogEntry,
+    InvestigationDetail,
+    InvestigationDetailResponse,
+    InvestigationReassessRequest,
+    InvestigationReassessResponse,
+    InvestigationMetricsSummary,
+)
+from app.schemas.decomposition import (
+    PeriodRange,
+    DriverItem,
+    WaterfallItem,
+    DimensionDecomposition,
+    DecompositionRequest,
+    DecompositionResponse,
+)
+from app.schemas.campaign_impact import (
+    CampaignImpactRequest,
+    CampaignImpactResponse,
+)
+from app.schemas.verification import (
+    VerificationClaim,
+    VerificationRequest,
+    VerificationResponse,
+)
 
 __all__ = [
     "SQLQueryRequest",
@@ -49,5 +84,32 @@ __all__ = [
     "AskRequest",
     "AskResponse",
     "ToolCallRecord",
-    "AuditLogResponse"
+    "AuditLogResponse",
+    "InvestigationStatus",
+    "InvestigationReviewStatus",
+    "ReviewStatus",
+    "ReviewDecision",
+    "InvestigationCreate",
+    "InvestigationSummary",
+    "InvestigationReviewCreate",
+    "InvestigationReviewRequest",
+    "InvestigationReviewResponse",
+    "InvestigationTurnResponse",
+    "InvestigationAuditLogEntry",
+    "InvestigationDetail",
+    "InvestigationDetailResponse",
+    "InvestigationReassessRequest",
+    "InvestigationReassessResponse",
+    "InvestigationMetricsSummary",
+    "PeriodRange",
+    "DriverItem",
+    "WaterfallItem",
+    "DimensionDecomposition",
+    "DecompositionRequest",
+    "DecompositionResponse",
+    "CampaignImpactRequest",
+    "CampaignImpactResponse",
+    "VerificationClaim",
+    "VerificationRequest",
+    "VerificationResponse",
 ]

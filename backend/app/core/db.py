@@ -4,7 +4,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import StaticPool
 from app.core.config import settings
-from app.models.business_data import Base
+from app.models import Base
 
 db_url = settings.DATABASE_URL
 

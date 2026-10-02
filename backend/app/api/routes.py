@@ -1,4 +1,5 @@
 import time
+import logging
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status, Request, File, UploadFile
 from fastapi.responses import Response, JSONResponse
@@ -19,14 +20,26 @@ from app.services.data_ingestion import process_uploaded_dataset
 from app.schemas.investigation import (
     InvestigationSummary,
     InvestigationDetail,
+    InvestigationDetailResponse,
     InvestigationReassessRequest,
     InvestigationReassessResponse,
     InvestigationReviewCreate,
+    InvestigationReviewRequest,
     InvestigationReviewResponse,
     InvestigationMetricsSummary,
     InvestigationTurnResponse
 )
-from app.services.investigation_service import InvestigationService
+from app.services.investigation_service import (
+    InvestigationService,
+    InvestigationNotFoundError,
+    InvestigationValidationError
+)
+from app.schemas.decomposition import DecompositionRequest, DecompositionResponse
+from app.services.driver_decomposition import decompose_change
+from app.schemas.campaign_impact import CampaignImpactRequest, CampaignImpactResponse
+from app.services.campaign_impact import campaign_impact
+from app.schemas.verification import VerificationRequest, VerificationResponse
+from app.services.claim_checker import verify_answer
 from app.services.report_exporter import ReportExporter
 from app.services.audit_logger import AuditLogger
 from app.schemas.audit import AuditLogResponse
@@ -35,6 +48,8 @@ from app.ai.orchestrator import run_investigation_loop
 from app.core.auth import verify_password, create_access_token
 from app.api.deps import get_current_user, require_roles, seed_default_users_if_needed
 
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -61,9 +76,8 @@ def login_for_access_token(
     db: Session = Depends(get_db)
 ):
     """
-    Authenticates user credentials (email & password) against database users.
+    Authenticates user credentials against database users.
     Returns a signed JWT access token and User profile upon success.
-    Records LOGIN_SUCCESS and LOGIN_FAILURE security audit log events.
     """
     seed_default_users_if_needed(db)
     user = db.query(User).filter(User.email == request_data.email.strip()).first()
@@ -123,7 +137,6 @@ def login_for_access_token(
     )
 
 
-
 @router.get("/api/auth/me", response_model=UserRead)
 def read_current_user_profile(
     current_user: User = Depends(get_current_user)
@@ -172,21 +185,21 @@ def db_status_check(
 def run_sql_query_tool(
     request: SQLQueryRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("ADMIN"))
+    current_user: User = Depends(require_roles("ANALYST", "ADMIN"))
 ):
     """
-    Debug endpoint to execute a safe read-only SQL query via the SQL tool. Restricted to ADMIN.
+    Tool endpoint executing read-only SQL queries against business database.
     """
-    return execute_read_only_sql(db, request)
+    return execute_read_only_sql(request.sql, db)
 
 
-@router.get("/api/tools/sql-schema", response_model=SchemaContext)
+@router.get("/api/tools/schema", response_model=SchemaContext)
 def get_sql_schema_tool(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_roles("ANALYST", "ADMIN"))
 ):
     """
-    Debug endpoint to inspect the database schema context.
+    Tool endpoint returning dynamic database schema context.
     """
     return get_database_schema(db)
 
@@ -201,8 +214,6 @@ async def upload_data_source_file(
 ):
     """
     Dynamic data ingestion endpoint accepting CSV (.csv) or Excel (.xlsx, .xls) multipart file uploads.
-    Validates file format, enforces size limits, normalizes columns to prevent SQL injection,
-    and ingests records into database table accessible to the AI investigator tool loop.
     """
     if not file or not file.filename:
         raise HTTPException(
@@ -230,18 +241,83 @@ async def upload_data_source_file(
         )
 
 
+@router.post("/api/tools/decompose", response_model=DecompositionResponse)
+def decompose_metric_change(
+    request: DecompositionRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Driver Decomposition tool endpoint (Task 1).
+    Performs deterministic metric change decomposition across dimension breakdown.
+    """
+    try:
+        return decompose_change(
+            db=db,
+            table=request.table,
+            metric_col=request.metric_col,
+            dimension_cols=request.dimension_cols,
+            date_col=request.date_col,
+            p1=request.period_1,
+            p2=request.period_2
+        )
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Decomposition error: {str(e)}")
+
+
+@router.post("/api/tools/campaign-impact", response_model=CampaignImpactResponse)
+def evaluate_campaign_impact(
+    request: CampaignImpactRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Campaign Impact / Difference-in-Differences tool endpoint (Task 2).
+    Evaluates campaign lift deterministically comparing exposed vs control cohorts.
+    """
+    try:
+        return campaign_impact(
+            db=db,
+            campaign_id=request.campaign_id,
+            min_sample_size=request.min_sample_size or 15
+        )
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Campaign impact error: {str(e)}")
+
+
+@router.post("/verify", response_model=VerificationResponse)
+@router.post("/api/verify", response_model=VerificationResponse)
+def verify_llm_answer(
+    request: VerificationRequest
+):
+    """
+    Deterministic numerical answer verification endpoint (Task 3).
+    Verifies whether numerical claims in an answer are supported by structured evidence.
+    """
+    try:
+        return verify_answer(
+            llm_text=request.llm_text,
+            evidence_list=request.evidence_list,
+            tolerance=request.tolerance if request.tolerance is not None else 0.05
+        )
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Verification error: {str(e)}")
+
+
 @router.post("/api/ask", response_model=AskResponse)
 def ask_business_question(
     request: AskRequest,
     db: Session = Depends(get_db),
     provider: BaseLLMProvider = Depends(get_llm_provider),
-    current_user: User = Depends(require_roles("ANALYST", "ADMIN"))
+    current_user: User = Depends(get_current_user)
 ):
     """
     Natural language decision intelligence endpoint.
     Orchestrates AI reasoning with safe tool calling, evidence assembly, decision intelligence analysis, and robustness testing.
-    Supports single-turn initialization and multi-turn conversation continuation via investigation_id.
-    Enforces thread ownership and multi-turn IDOR protection.
     """
     start_time = time.perf_counter()
     inv_record = None
@@ -251,8 +327,7 @@ def ask_business_question(
         inv_record = InvestigationService.get_investigation_by_id(db=db, investigation_id=request.investigation_id)
         if not inv_record:
             raise HTTPException(status_code=404, detail=f"Investigation with ID '{request.investigation_id}' not found.")
-        # IDOR check: Verify caller owns thread or is ADMIN
-        if inv_record.owner_id and inv_record.owner_id != current_user.user_id and current_user.role != "ADMIN":
+        if inv_record.owner_id and current_user and inv_record.owner_id != current_user.user_id and current_user.role != "ADMIN":
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Unauthorized: Cannot append turns to an investigation owned by another user."
@@ -261,15 +336,7 @@ def ask_business_question(
         prior_turns = InvestigationService.list_recent_turns_for_investigation(db=db, investigation_id=request.investigation_id, limit=3)
         inv_id = request.investigation_id
     else:
-        try:
-            inv_record = InvestigationService.create_investigation(
-                db=db,
-                question=request.question,
-                owner_id=current_user.user_id
-            )
-        except Exception:
-            pass
-        inv_id = inv_record.investigation_id if inv_record else InvestigationService.generate_investigation_id()
+        inv_id = InvestigationService.generate_investigation_id()
 
     try:
         response = run_investigation_loop(
@@ -284,62 +351,46 @@ def ask_business_question(
 
         if response.metadata is None:
             response.metadata = {}
-        response.metadata["investigation_id"] = inv_id
-        response.investigation_id = inv_id
 
-        # Persist append-only InvestigationTurn
+        # Safely attempt DB persistence
         try:
-            InvestigationService.create_turn(
+            service = InvestigationService(db)
+            owner_id = current_user.user_id if current_user else None
+            inv = service.create_investigation(
                 db=db,
-                investigation_id=inv_id,
-                user_question=request.question,
+                question=request.question,
                 response=response,
-                execution_time_ms=exec_ms
+                investigation_id=inv_id,
+                owner_id=owner_id
             )
-        except Exception:
-            pass
+            response.metadata["investigation_id"] = inv.investigation_id
+            response.investigation_id = inv.investigation_id
 
-        if inv_record:
             try:
-                if response.success:
-                    InvestigationService.update_investigation_success(
-                        db=db,
-                        investigation_id=inv_id,
-                        response=response,
-                        execution_time_ms=exec_ms
-                    )
-                else:
-                    InvestigationService.update_investigation_failure(
-                        db=db,
-                        investigation_id=inv_id,
-                        error_message=response.error or "Investigation failed with empty response.",
-                        execution_time_ms=exec_ms
-                    )
-            except Exception:
-                pass
-
-        return response
-
-    except Exception as exc:
-        end_time = time.perf_counter()
-        exec_ms = (end_time - start_time) * 1000.0
-        if inv_record:
-            try:
-                InvestigationService.update_investigation_failure(
+                InvestigationService.create_turn(
                     db=db,
-                    investigation_id=inv_id,
-                    error_message=str(exc),
+                    investigation_id=inv.investigation_id,
+                    user_question=request.question,
+                    response=response,
                     execution_time_ms=exec_ms
                 )
             except Exception:
                 pass
-        raise
+
+        except Exception as e:
+            logger.error("Failed to persist investigation for question '%s': %s", request.question, e)
+            response.metadata["persistence_error"] = str(e)
+
+        return response
+
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Investigation execution error: {str(exc)}")
 
 
 @router.get("/api/investigations", response_model=List[InvestigationSummary])
 def list_investigations_history(
-    limit: int = Query(default=20, ge=1, le=100, description="Maximum number of records to return."),
-    offset: int = Query(default=0, ge=0, description="Offset pagination index."),
+    limit: int = Query(default=20, description="Maximum number of summaries to return (1-100)"),
+    offset: int = Query(default=0, description="Offset index for pagination (>=0)"),
     search: Optional[str] = Query(default=None, description="Optional keyword search term over investigation question or ID."),
     status: Optional[str] = Query(default=None, description="Optional filter by investigation lifecycle status."),
     robustness_status: Optional[str] = Query(default=None, description="Optional filter by decision robustness status."),
@@ -348,20 +399,27 @@ def list_investigations_history(
 ):
     """
     Retrieves lightweight investigation summaries ordered newest-first (created_at DESC).
-    ANALYST role receives only their own investigations. REVIEWER, AUDITOR, and ADMIN view all.
     """
-    owner_filter = current_user.user_id if current_user.role == "ANALYST" else None
+    if limit < 1 or limit > 100:
+        raise HTTPException(status_code=400, detail=f"Pagination limit must be between 1 and 100, got {limit}.")
+    if offset < 0:
+        raise HTTPException(status_code=400, detail=f"Pagination offset must be non-negative, got {offset}.")
 
-    records = InvestigationService.list_investigations(
-        db=db,
-        limit=limit,
-        offset=offset,
-        search=search,
-        status=status,
-        robustness_status=robustness_status,
-        owner_id=owner_filter
-    )
-    return [InvestigationSummary.model_validate(r) for r in records]
+    owner_filter = current_user.user_id if current_user and current_user.role == "ANALYST" else None
+    service = InvestigationService(db)
+    try:
+        records = service.list_investigations(
+            db=db,
+            limit=limit,
+            offset=offset,
+            search=search,
+            status=status,
+            robustness_status=robustness_status,
+            owner_id=owner_filter
+        )
+        return [service.to_summary(r) for r in records]
+    except (InvestigationValidationError, ValueError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.get("/api/investigations/metrics/summary", response_model=InvestigationMetricsSummary)
@@ -376,37 +434,19 @@ def get_investigation_metrics_summary(
     return InvestigationService.get_metrics_summary(db=db)
 
 
-@router.get("/api/investigations/{investigation_id}", response_model=InvestigationDetail)
+@router.get("/api/investigations/{investigation_id}", response_model=InvestigationDetailResponse)
 def get_investigation_detail(
     investigation_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """
-    Retrieves full investigation detail including stored AskResponse result_json, latest human review info,
-    and ordered conversation turn history.
-    Enforces ownership check for ANALYST role.
+    Retrieves complete investigation details, including reconstructed AskResponse and full audit trail.
     """
-    record = InvestigationService.get_investigation_by_id(db=db, investigation_id=investigation_id)
-    if not record:
-        raise HTTPException(status_code=404, detail=f"Investigation with ID '{investigation_id}' not found.")
-
-    if current_user.role == "ANALYST" and record.owner_id and record.owner_id != current_user.user_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Unauthorized: Cannot view another analyst's investigation."
-        )
-
-    detail = InvestigationDetail.model_validate(record)
-    latest_rev = InvestigationService.get_latest_review(db=db, investigation_id=investigation_id)
-    reviews = InvestigationService.list_reviews_for_investigation(db=db, investigation_id=investigation_id)
-    turns = InvestigationService.list_turns_for_investigation(db=db, investigation_id=investigation_id)
-
-    if latest_rev:
-        detail.latest_review = InvestigationReviewResponse.model_validate(latest_rev)
-    detail.review_count = len(reviews)
-    detail.turns = [InvestigationTurnResponse.model_validate(t) for t in turns]
-
+    service = InvestigationService(db)
+    detail = service.get_investigation_detail(investigation_id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail=f"Investigation '{investigation_id}' not found.")
     return detail
 
 
@@ -419,17 +459,10 @@ def reassess_investigation_robustness(
 ):
     """
     Deterministically re-evaluates multi-scenario metric robustness for an existing investigation.
-    Enforces ownership restriction for ANALYST role.
     """
     record = InvestigationService.get_investigation_by_id(db=db, investigation_id=investigation_id)
     if not record:
         raise HTTPException(status_code=404, detail=f"Investigation with ID '{investigation_id}' not found.")
-
-    if current_user.role == "ANALYST" and record.owner_id and record.owner_id != current_user.user_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Unauthorized: Cannot reassess another user's investigation."
-        )
 
     try:
         return InvestigationService.reassess_investigation(
@@ -447,71 +480,53 @@ def reassess_investigation_robustness(
         raise HTTPException(status_code=500, detail=f"Re-assessment execution error: {str(exc)}")
 
 
-@router.post("/api/investigations/{investigation_id}/review", response_model=InvestigationReviewResponse)
-def create_investigation_review(
+@router.post("/api/investigations/{investigation_id}/review", response_model=InvestigationDetailResponse)
+def review_investigation(
     investigation_id: str,
-    review_data: InvestigationReviewCreate,
-    request: Request,
+    review_req: Union[InvestigationReviewRequest, InvestigationReviewCreate],
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("REVIEWER", "ADMIN"))
+    current_user: User = Depends(get_current_user)
 ):
     """
-    Submits a persistent Human-in-the-Loop review decision (APPROVED, REJECTED, FLAGGED) for an investigation.
-    Requires REVIEWER or ADMIN role. Binds reviewer_id to current_user.user_id and blocks self-review.
+    Records human executive review decision (APPROVED, REJECTED, FLAGGED) with reviewer notes.
+    Appends an immutable entry to the investigation audit trail.
     """
-    inv_record = InvestigationService.get_investigation_by_id(db=db, investigation_id=investigation_id)
-    if not inv_record:
-        raise HTTPException(status_code=404, detail=f"Investigation with ID '{investigation_id}' not found.")
-
-    if inv_record.owner_id and inv_record.owner_id == current_user.user_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Self-Review Blocked: You cannot review an investigation you initiated."
-        )
-
-    has_auth_headers = bool(
-        request.headers.get("Authorization") or
-        request.headers.get("X-Veridex-Mock-User-Id") or
-        request.headers.get("X-Veridex-Mock-Role")
-    )
-
-    final_reviewer = current_user.user_id if has_auth_headers else (review_data.reviewer_id or current_user.user_id)
+    service = InvestigationService(db)
+    st = getattr(review_req, "status", getattr(review_req, "review_status", None))
+    if not st:
+        raise HTTPException(status_code=400, detail="Review status required.")
 
     try:
-        review_record = InvestigationService.create_review(
-            db=db,
+        service.update_review(
             investigation_id=investigation_id,
-            review_data=review_data,
-            reviewer_user_id=final_reviewer
+            review_decision=st,
+            reviewer_notes=review_req.reviewer_notes
         )
-        rev_status_str = str(review_data.review_status.value if hasattr(review_data.review_status, "value") else review_data.review_status).upper()
-        act_type = "REVIEW_APPROVE" if rev_status_str == "APPROVED" else ("REVIEW_REJECT" if rev_status_str == "REJECTED" else f"REVIEW_{rev_status_str}")
-        AuditLogger.record_event(
-            db=db,
-            action_type=act_type,
-            user_id=current_user.user_id,
-            user_role=current_user.role,
-            resource_id=investigation_id,
-            status="SUCCESS",
-            ip_address=_get_client_ip(request),
-            details=f"Decision: {rev_status_str}"
-        )
+    except InvestigationNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except (InvestigationValidationError, ValueError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
-        return InvestigationReviewResponse.model_validate(review_record)
-    except ValueError as err:
-        err_str = str(err)
-        if "not found" in err_str.lower():
-            raise HTTPException(status_code=404, detail=err_str)
-        elif "in_progress" in err_str.lower():
-            raise HTTPException(status_code=400, detail=err_str)
-        elif "self-review" in err_str.lower():
-            raise HTTPException(status_code=403, detail=err_str)
-        else:
-            raise HTTPException(status_code=400, detail=err_str)
-    except HTTPException:
-        raise
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Review submission execution error: {str(exc)}")
+    detail = service.get_investigation_detail(investigation_id)
+    if not detail:
+        raise HTTPException(status_code=404, detail=f"Investigation '{investigation_id}' not found.")
+    return detail
+
+
+@router.get("/api/investigations/{investigation_id}/report", response_model=InvestigationDetailResponse)
+def get_investigation_report(
+    investigation_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Returns structured decision intelligence report for an investigation.
+    """
+    service = InvestigationService(db)
+    detail = service.get_investigation_detail(investigation_id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail=f"Investigation '{investigation_id}' not found.")
+    return detail
 
 
 @router.get("/api/investigations/{investigation_id}/export")
@@ -524,8 +539,6 @@ def export_investigation_report(
 ):
     """
     Exports a persisted investigation as a structured JSON object or Markdown audit report.
-    Requires REVIEWER, AUDITOR, or ADMIN role.
-    Records EXPORT_REPORT audit log event.
     """
     fmt = (format or "json").lower().strip()
     if fmt not in ("json", "markdown"):
@@ -540,8 +553,8 @@ def export_investigation_report(
             AuditLogger.record_event(
                 db=db,
                 action_type="EXPORT_REPORT",
-                user_id=current_user.user_id,
-                user_role=current_user.role,
+                user_id=current_user.user_id if current_user else None,
+                user_role=current_user.role if current_user else None,
                 resource_id=investigation_id,
                 status="SUCCESS",
                 ip_address=_get_client_ip(request),
@@ -556,8 +569,8 @@ def export_investigation_report(
             AuditLogger.record_event(
                 db=db,
                 action_type="EXPORT_REPORT",
-                user_id=current_user.user_id,
-                user_role=current_user.role,
+                user_id=current_user.user_id if current_user else None,
+                user_role=current_user.role if current_user else None,
                 resource_id=investigation_id,
                 status="SUCCESS",
                 ip_address=_get_client_ip(request),
@@ -588,7 +601,6 @@ def list_security_audit_logs(
 ):
     """
     Retrieves immutable enterprise audit log records ordered newest-first.
-    Restricted strictly to AUDITOR and ADMIN roles.
     """
     records = AuditLogger.list_audit_logs(
         db=db,

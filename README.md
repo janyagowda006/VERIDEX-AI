@@ -231,6 +231,391 @@ uvicorn app.main:app --reload --port 8000
 - Schema Introspection API: [http://localhost:8000/api/tools/sql-schema](http://localhost:8000/api/tools/sql-schema)
 - Safe SQL Query API: `POST http://localhost:8000/api/tools/sql-query`
 - Decision Intelligence Query API: `POST http://localhost:8000/api/ask`
+- Driver Decomposition API: `POST http://localhost:8000/tools/decompose`
+
+---
+
+## 📊 Driver Decomposition (`POST /tools/decompose`)
+
+### Purpose
+Explains why revenue changed between two time periods by decomposing variance across business dimensions (`region`, `category`, `segment`, `customer`). It strictly enforces that all values are calculated deterministically in backend code rather than hallucinated by an LLM.
+
+### Endpoint
+- **URL**: `/tools/decompose` (also available via `/api/tools/decompose`)
+- **Method**: `POST`
+- **Supported Metric**: Strictly `revenue` (`ALLOWED_METRICS = {"revenue"}`).
+
+### Dimensional Attribution Semantics
+- **Independent Decomposition Views**: Decompositions across dimensions (`region`, `category`, `segment`, `customer`) are **independent dimensional attribution slices**, NOT a recursive parent-child drill-down tree.
+- **Independent Reconciliation**: Every evaluated dimension independently satisfies the reconciliation invariant:
+  $$\sum \text{driver\_deltas} == \text{total\_change}$$
+
+### Formula
+- **Total Change**: `total_change = revenue_b - revenue_a`
+- **Driver Delta**: `delta_amount = revenue_b_group - revenue_a_group`
+- **Driver Share of Total Change**: `(delta_amount / total_change) * 100`
+- **Within-Group Growth**: `((revenue_b_group - revenue_a_group) / revenue_a_group) * 100` (safe against zero baseline)
+- **Reconciliation Invariant**: `sum(driver_deltas) == total_change` (enforced with floating-point tolerance; raises `ReconciliationError` if violated).
+
+### Revenue Definition & Boundary Filter
+- **Exclusion**: Orders with `order_status = 'cancelled'` (case-insensitive) are strictly excluded from all revenue computations.
+- **Formula**: `sum(quantity * unit_price * (1.0 - COALESCE(discount, 0.0)))`.
+
+### Zero-Baseline Semantics (Deterministic)
+- **New Group ($A = 0, B > 0$)**: `status = "new"`, `delta_amount = revenue_b`, `percent_change_within_group = null` (growth from zero is mathematically undefined, not falsely claimed as 100%).
+- **Lost Group ($A > 0, B = 0$)**: `status = "lost"`, `delta_amount = -revenue_a`, `percent_change_within_group = -100.0`.
+- **Zero/Zero Group ($A = 0, B = 0$)**: `status = "normal"`, `delta_amount = 0.0`, `percent_change_within_group = 0.0`.
+- **Normal Group ($A > 0, B > 0$)**: `status = "normal"`, `percent_change_within_group = ((B - A) / A) * 100`.
+- **Zero Total Change**: If `total_change == 0`, `percent_of_total_change` evaluates safely to `0.0%` for all drivers.
+- **High Cardinality**: For dimensions with high cardinality (e.g. `customer`), the top `N` drivers by absolute impact are preserved and remaining accounts are deterministically aggregated into `"Other (Remaining Customers)"` to preserve the reconciliation invariant.
+
+### Waterfall Semantics
+- **Top-Level Waterfall**: The top-level `waterfall` series represents the **primary dimension only** (by default, `region`). It does **NOT** concatenate multiple dimensions, avoiding double-counting.
+- **Reconciliation**:
+  $$\sum \text{waterfall}[i].\text{value} == \text{total\_change}$$
+  $$\text{waterfall}[-1].\text{cumulative} == \text{total\_change}$$
+- **Revenue Bridge**: A separate `revenue_bridge` series starts at `Period A Baseline` and ends at `Period B Total`.
+
+### Database Read-Only Guarantees: PostgreSQL vs SQLite
+- **PostgreSQL (Production)**: Read-only transactions are enforced at the database session level using `SET TRANSACTION READ ONLY` and `SET LOCAL statement_timeout = '3000ms'`.
+- **SQLite (Automated Unit Tests)**: Provides an isolated, deterministic in-memory test environment. Automated tests verify parameterized query execution, column allowlist validation, and table immutability. SQLite tests verify SQL structure and application guards, not PostgreSQL server-side transaction flags.
+
+### Evidence Architecture Integration
+Every driver calculation produces a `DERIVED_FACT` evidence object conforming to the existing VERIDEX Evidence Architecture (`EvidenceItem`, `DerivedFactCalculation`, `EvidenceCalculator`):
+- `evidence_type`: `DERIVED_FACT`
+- `formula`: `({dimension}_delta / total_delta) * 100`
+- `inputs`: exact deterministic inputs (`{dimension}_delta`, `total_delta`, `revenue_a`, `revenue_b`, `group_label`)
+- `output`: driver percentage contribution
+- `limitations`: records explicit exclusion of cancelled orders.
+
+### Request JSON
+```json
+{
+  "metric": "revenue",
+  "period_a": {
+    "start_date": "2025-01-01",
+    "end_date": "2025-01-31"
+  },
+  "period_b": {
+    "start_date": "2025-02-01",
+    "end_date": "2025-02-28"
+  },
+  "dimensions": ["region", "category", "segment", "customer"],
+  "top_n": 10
+}
+```
+
+### Response JSON
+```json
+{
+  "success": true,
+  "metric": "revenue",
+  "period_a": {
+    "start_date": "2025-01-01",
+    "end_date": "2025-01-31"
+  },
+  "period_b": {
+    "start_date": "2025-02-01",
+    "end_date": "2025-02-28"
+  },
+  "total_revenue_a": 2000.0,
+  "total_revenue_b": 1000.0,
+  "total_change": -1000.0,
+  "percent_change": -50.0,
+  "dimensions": ["region", "category", "segment", "customer"],
+  "primary_dimension": "region",
+  "breakdowns": {
+    "region": {
+      "dimension": "region",
+      "drivers": [
+        {
+          "label": "Karnataka",
+          "dimension": "region",
+          "revenue_a": 1000.0,
+          "revenue_b": 400.0,
+          "delta_amount": -600.0,
+          "percent_of_total_change": 60.0,
+          "percent_change_within_group": -60.0,
+          "status": "normal"
+        },
+        {
+          "label": "South India",
+          "dimension": "region",
+          "revenue_a": 400.0,
+          "revenue_b": 200.0,
+          "delta_amount": -200.0,
+          "percent_of_total_change": 20.0,
+          "percent_change_within_group": -50.0,
+          "status": "normal"
+        },
+        {
+          "label": "Telangana",
+          "dimension": "region",
+          "revenue_a": 0.0,
+          "revenue_b": 200.0,
+          "delta_amount": 200.0,
+          "percent_of_total_change": -20.0,
+          "percent_change_within_group": null,
+          "status": "new"
+        }
+      ],
+      "sum_driver_deltas": -1000.0,
+      "reconciled": true,
+      "waterfall": [
+        { "label": "Karnataka", "value": -600.0, "cumulative": -600.0 },
+        { "label": "South India", "value": -200.0, "cumulative": -800.0 },
+        { "label": "Telangana", "value": 200.0, "cumulative": -1000.0 }
+      ]
+    }
+  },
+  "waterfall": [
+    { "label": "Karnataka", "value": -600.0, "cumulative": -600.0 },
+    { "label": "South India", "value": -200.0, "cumulative": -800.0 },
+    { "label": "Telangana", "value": 200.0, "cumulative": -1000.0 }
+  ],
+  "revenue_bridge": [
+    { "label": "Period A Baseline", "value": 2000.0, "cumulative": 2000.0 },
+    { "label": "Karnataka", "value": -600.0, "cumulative": 1400.0 },
+    { "label": "Period B Total", "value": 0.0, "cumulative": 1000.0 }
+  ],
+  "evidence": [
+    {
+      "evidence_id": "ev_derived_region_1",
+      "evidence_type": "DERIVED_FACT",
+      "description": "Decomposition driver 'Karnataka' (region): delta of -600.00 represents 60.00% of total change (-1000.00).",
+      "calculation": {
+        "formula_name": "region_contribution_percentage",
+        "formula": "(region_delta / total_delta) * 100",
+        "inputs": {
+          "region_delta": -600.0,
+          "total_delta": -1000.0,
+          "revenue_a": 1000.0,
+          "revenue_b": 400.0,
+          "group_label": "Karnataka"
+        },
+        "output": 60.0,
+        "input_evidence_ids": []
+      },
+      "limitations": [
+        "Revenue calculation strictly excludes orders where order_status = 'cancelled' (case-insensitive)."
+      ]
+    }
+  ],
+  "assumptions": [
+    "Revenue calculation strictly excludes orders where order_status = 'cancelled' (case-insensitive).",
+    "Net revenue formula applied: sum(quantity * unit_price * (1 - COALESCE(discount, 0.0))).",
+    "Reconciliation invariant enforced: sum(driver_deltas) == total_change within tolerance.",
+    "Decompositions across dimensions (region, category, segment, customer) represent independent attribution views."
+  ],
+  "reconciliation_tolerance": 0.05,
+  "execution_metadata": {
+    "execution_time_ms": 12.4,
+    "dimensions_evaluated": 4,
+    "total_drivers_identified": 24
+  }
+}
+```
+
+### Python Example Usage
+```python
+from app.core.db import SessionLocal
+from app.services.driver_decomposition import decompose_change
+
+with SessionLocal() as db:
+    result = decompose_change(
+        db=db,
+        metric="revenue",
+        period_a={"start_date": "2025-01-01", "end_date": "2025-01-31"},
+        period_b={"start_date": "2025-02-01", "end_date": "2025-02-28"},
+        dimensions=["region", "category"]
+    )
+
+    print(f"Total Change: {result.total_change}")
+    for driver in result.breakdowns["region"].drivers:
+        print(f" - {driver.label}: {driver.delta_amount:+.2f} ({driver.percent_of_total_change:.1f}%)")
+```
+
+---
+
+## 📈 Deterministic Campaign Impact / Difference-in-Differences (Task 2)
+
+> **"Observational evidence; causation not proven."**
+
+VERIDEX provides a deterministic Difference-in-Differences (DiD) analytical tool to evaluate the observational revenue impact of business campaigns across pre-campaign, exposure, and post-campaign evaluation windows.
+
+### Campaign Registry & Metadata Configuration
+> [!NOTE]
+> The production database contains no native campaigns table or promotional tags. The in-code `CAMPAIGN_REGISTRY` contains deterministic, synthetic demonstration campaign metadata (`CMP-2025-Q3-SOUTH`) exclusively used to exercise and verify this analytical capability. It does not represent a discovered historical business campaign, nor does historical regional variation prove campaign causality.
+
+- **Campaign ID**: `CMP-2025-Q3-SOUTH`
+- **Target Region**: `South`
+- **Before Baseline Window**: `2025-04-01` through `2025-06-30` (Q2 2025)
+- **Exposure Window**: `2025-07-01` through `2025-09-30` (Q3 2025)
+- **After Evaluation Window**: `2025-10-01` through `2025-12-31` (Q4 2025)
+
+### Observational Cohort Definitions
+- **Exposed Population ($N_{\text{exposed}}$)**: Customers in the campaign region who placed at least one qualifying completed order during the exposure window.
+- **Control Population ($N_{\text{control}}$)**: Customers in the same campaign region who did NOT place a qualifying order during the campaign exposure window, while having qualifying order history during before/after analysis periods.
+- *Observational Limitation & Selection Bias*: This cohort definition is strictly observational, **not** a randomized trial. Control membership is subject to selection bias because exposure is derived from observed purchasing behavior rather than random assignment. It does not constitute proof of campaign impact or causality.
+
+### Mathematical Formulation
+1. **Customer-Level Net Revenue**:
+   $$\text{Revenue} = \sum (\text{order\_items.quantity} \times \text{order\_items.unit\_price} \times (1 - \text{COALESCE}(\text{orders.discount}, 0.0)))$$
+   strictly excluding orders where `LOWER(order_status) = 'cancelled'`. Customer set remains invariant across periods (zero drop; customers with no orders in a window receive ₹0.00).
+2. **Cohort Averages**:
+   $$\bar{Y}_{\text{exposed, before}} = \frac{1}{N_e} \sum_{i \in \text{exposed}} Y_{i, \text{before}}, \quad \bar{Y}_{\text{exposed, after}} = \frac{1}{N_e} \sum_{i \in \text{exposed}} Y_{i, \text{after}}$$
+   $$\bar{Y}_{\text{control, before}} = \frac{1}{N_c} \sum_{j \in \text{control}} Y_{j, \text{before}}, \quad \bar{Y}_{\text{control, after}} = \frac{1}{N_c} \sum_{j \in \text{control}} Y_{j, \text{after}}$$
+3. **Changes & DiD Estimate**:
+   $$\Delta_{\text{exposed}} = \bar{Y}_{\text{exposed, after}} - \bar{Y}_{\text{exposed, before}}$$
+   $$\Delta_{\text{control}} = \bar{Y}_{\text{control, after}} - \bar{Y}_{\text{control, before}}$$
+   $$\text{DiD} = \Delta_{\text{exposed}} - \Delta_{\text{control}}$$
+4. **Control Group Variability**:
+   Computed from individual customer differences $d_j = Y_{j, \text{after}} - Y_{j, \text{before}}$:
+   $$s_c = \sqrt{\frac{1}{N_c - 1} \sum_{j=1}^{N_c} (d_j - \bar{d}_c)^2}, \quad \text{SE}_{\text{control}} = \frac{s_c}{\sqrt{N_c}}$$
+5. **Sample Size & Deterministic Inference Rules**:
+   - Minimum threshold: $N_e \ge 15$ and $N_c \ge 15$. If unmet: `status = "INSUFFICIENT_DATA"`, `inference = "Not supported"`.
+   - `Supported by evidence`: $N_e, N_c \ge 15$, $\text{DiD} > 0$, and $|\text{DiD}| \ge 1.96 \times \text{SE}_{\text{control}}$.
+   - `Weak support`: $N_e, N_c \ge 15$, $\text{DiD} > 0$, and $|\text{DiD}| < 1.96 \times \text{SE}_{\text{control}}$.
+   - `Not supported`: $\text{DiD} \le 0$ or status is `INSUFFICIENT_DATA`.
+   *(These are deterministic classification rules, not causal proof).*
+
+### API Endpoints
+- `POST /tools/campaign-impact`
+- `POST /api/tools/campaign-impact`
+
+```json
+{
+  "campaign_id": "CMP-2025-Q3-SOUTH",
+  "min_sample_size": 15
+}
+```
+
+---
+
+## 🔍 Deterministic Claim Checker / Numerical Answer Verification (Task 3)
+
+> **"AI for reasoning, code for correctness."**
+> The LLM's answer is NOT trusted merely because it sounds plausible. Numerical claims are deterministically parsed and verified against structured evidence. The LLM is never used to judge its own claims.
+
+VERIDEX provides a deterministic verification layer (`verify_answer`) and API endpoint (`POST /verify`) to validate numerical claims in LLM-generated business answers against the structured evidence generated by VERIDEX analytical tools.
+
+### Endpoint & Signatures
+- **URL**: `POST /verify` (also available via `POST /api/verify`)
+- **Python Service**:
+  ```python
+  def verify_answer(
+      llm_text: str,
+      evidence_list: list[EvidenceItem],
+      tolerance: float = 0.05
+  ) -> VerificationResponse:
+  ```
+
+### Supported Numerical Categories
+Deterministic extraction uses regex with negative lookbehinds and atomic date parsing to avoid false positives:
+1. **Plain Integers**: `Revenue increased by 1250.` $\rightarrow$ `1250.0` (`unit: number`)
+2. **Decimal Values**: `Revenue was 1250.50.` $\rightarrow$ `1250.5` (`unit: number`)
+3. **Percentages & Signed Percentages**: `12.5%`, `+12.5%`, `-60%` $\rightarrow$ `12.5`, `12.5`, `-60.0` (`unit: percent`)
+4. **Currency Values**: `₹48,200`, `₹4,820.00`, `$1,250`, `-₹1,250` $\rightarrow$ `48200.0`, `4820.0`, `1250.0`, `-1250.0` (`unit: currency`)
+5. **Indian Lakh Notation**: `₹48.2 lakh`, `48.2L`, `48.2 lakhs` $\rightarrow$ `4,820,000.0` (`unit: currency`)
+6. **Indian Crore Notation**: `₹2.4 crore`, `2.4Cr`, `2.4 crores` $\rightarrow$ `24,000,000.0` (`unit: currency`)
+7. **Counts**: `31 customers`, `7 orders`, `16 units` $\rightarrow$ `31`, `7`, `16` (`unit: count`)
+8. **Negative Values**: `-₹1,250`, `-600`, `-50.0%` $\rightarrow$ normalized with negative sign
+9. **Dates**: ISO dates (`2025-07-01`) and named dates (`July 1, 2025`) parsed atomically as date claims (`unit: date`).
+10. **Entity Code Filtering**: Explicitly skips false-positive identifiers such as `ORD-00001`, `CUST-0018`, `PRD-101`, `CMP-2025-Q3-SOUTH`, `ev_*`, `E123`, `v1.0`, and SHA-256 hashes.
+
+### Unit Normalization Rules
+Equivalent formats are normalized before comparison:
+- `₹48.2 lakh` = `48.2L` = `₹4,820,000.00`
+- `₹2.4 crore` = `2.4Cr` = `₹24,000,000.00`
+- `₹48.2K` = `₹48,200.00`
+- **Strict Unit Separation**: Units are never conflated:
+  - `12.5%` (`percent`) will **never** match scalar `12.5` (`number` or `currency`).
+  - `₹1,250` (`currency`) will **never** match `1,250 customers` (`count`).
+  - A regional decline of `-600` will **never** match a percentage claim of `60%`.
+
+### Rounding Tolerance & Matching Semantics
+- **Strict Absolute Tolerance**: Configurable `tolerance = 0.05` (default). Two values match if and only if $|V_{\text{claim}} - V_{\text{candidate}}| \le 0.05$.
+- **Rejection of Arbitrary Proximity**: Values that are merely 'close' (e.g. ₹48,300 vs ₹48,200) are strictly rejected. No arbitrary relative tolerance is permitted.
+- **Directional Decline Semantics**: Negative deltas and percentage changes in evidence (e.g. `-37.5%` or `-600.0`) match magnitude claims when accompanied by decline language (e.g. 'declined by 37.5%', 'fell by ₹600').
+- **Candidate Extraction**: Automatically harvests values from:
+  1. `calculation.output` and `calculation.inputs` with single strict semantic typing (`currency`, `count`, `percent`, `date`, `number`).
+  2. `source.relevant_rows` column values.
+  3. `description` explicit currency, percent, count, and date claims.
+
+### PASS / FAIL & Unsupported Claim Behavior
+- **PASS**: Every relevant numerical claim matches at least one compatible evidence item within tolerance (or zero numerical claims were detected in the text).
+- **FAIL**: If **any** numerical claim is unsupported, overall status is `FAIL`. There is zero silent acceptance of unsupported numbers.
+- **Sentence-Level Provenance**: Every claim preserves its original sentence, extracted text, normalized value, unit, status, and supporting `matching_evidence_ids`.
+
+### Single-Retry Regeneration Rule
+If verification fails, the system exposes a deterministic helper `prepare_regeneration_prompt(verification: VerificationResponse)`:
+- Exactly **one** retry is allowed.
+- Never loops indefinitely.
+- The prompt returned is strictly: `"use only numbers from the evidence list"`.
+- Returns `None` if verification passed.
+
+### Methodological Limitations
+> [!IMPORTANT]
+> 1. **Evidence-Relative Scope**: The Claim Checker deterministically verifies numerical consistency **against supplied evidence**. It does not independently verify ground truth beyond what the evidence pipeline computes.
+> 2. **Non-Numerical Claims**: The verifier does not evaluate or prove qualitative assertions, causal arguments, sentiment, or non-numerical claims.
+
+### API Example
+```json
+// POST /verify
+{
+  "llm_text": "Karnataka contributed 60% of the decline, with revenue falling by ₹600. However, customer churn was 42%.",
+  "evidence_list": [
+    {
+      "evidence_id": "ev_derived_region_1",
+      "evidence_type": "DERIVED_FACT",
+      "calculation": {
+        "formula_name": "region_contribution_percentage",
+        "formula": "(region_delta / total_delta) * 100",
+        "inputs": { "region_delta": -600.0, "total_delta": -1000.0 },
+        "output": 60.0
+      }
+    }
+  ]
+}
+```
+**Response**:
+```json
+{
+  "status": "FAIL",
+  "verified_count": 2,
+  "unverified_count": 1,
+  "summary": "Verification FAILED: 1 of 3 numerical claim(s) unsupported by evidence.",
+  "verified": [
+    {
+      "claim_text": "60%",
+      "sentence": "Karnataka contributed 60% of the decline, with revenue falling by ₹600.",
+      "normalized_value": 60.0,
+      "unit": "percent",
+      "status": "VERIFIED",
+      "matching_evidence_ids": ["ev_derived_region_1"]
+    },
+    {
+      "claim_text": "₹600",
+      "sentence": "Karnataka contributed 60% of the decline, with revenue falling by ₹600.",
+      "normalized_value": 600.0,
+      "unit": "currency",
+      "status": "VERIFIED",
+      "matching_evidence_ids": ["ev_derived_region_1"]
+    }
+  ],
+  "unverified": [
+    {
+      "claim_text": "42%",
+      "sentence": "However, customer churn was 42%.",
+      "normalized_value": 42.0,
+      "unit": "percent",
+      "status": "UNVERIFIED",
+      "matching_evidence_ids": [],
+      "reason": "No compatible evidence found for 42.0 (percent)."
+    }
+  ]
+}
+```
 
 ---
 

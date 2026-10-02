@@ -33,7 +33,24 @@ from app.schemas.investigation import (
     InvestigationSummary,
     InvestigationReviewRequest,
     InvestigationAuditLogEntry,
-    InvestigationDetailResponse
+    InvestigationDetailResponse,
+)
+from app.schemas.decomposition import (
+    PeriodRange,
+    DriverItem,
+    WaterfallItem,
+    DimensionDecomposition,
+    DecompositionRequest,
+    DecompositionResponse,
+)
+from app.schemas.campaign_impact import (
+    CampaignImpactRequest,
+    CampaignImpactResponse,
+)
+from app.schemas.verification import (
+    VerificationClaim,
+    VerificationRequest,
+    VerificationResponse,
 )
 
 __all__ = [
@@ -64,4 +81,15 @@ __all__ = [
     "InvestigationReviewRequest",
     "InvestigationAuditLogEntry",
     "InvestigationDetailResponse",
+    "PeriodRange",
+    "DriverItem",
+    "WaterfallItem",
+    "DimensionDecomposition",
+    "DecompositionRequest",
+    "DecompositionResponse",
+    "CampaignImpactRequest",
+    "CampaignImpactResponse",
+    "VerificationClaim",
+    "VerificationRequest",
+    "VerificationResponse",
 ]

@@ -20,6 +20,12 @@ from app.services.investigation_service import (
     InvestigationNotFoundError,
     InvestigationValidationError,
 )
+from app.schemas.decomposition import DecompositionRequest, DecompositionResponse
+from app.services.driver_decomposition import decompose_change
+from app.schemas.campaign_impact import CampaignImpactRequest, CampaignImpactResponse
+from app.services.campaign_impact import campaign_impact
+from app.schemas.verification import VerificationRequest, VerificationResponse
+from app.services.claim_checker import verify_answer
 from app.ai.provider import BaseLLMProvider, get_llm_provider
 from app.ai.orchestrator import run_investigation_loop
 
@@ -82,6 +88,81 @@ def get_sql_schema_tool(db: Session = Depends(get_db)):
     Debug endpoint to inspect the database schema context for future AI agent context.
     """
     return get_database_schema(db)
+
+
+@router.post("/tools/decompose", response_model=DecompositionResponse)
+@router.post("/api/tools/decompose", response_model=DecompositionResponse)
+def decompose_revenue_change(
+    request: DecompositionRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Deterministic driver decomposition tool explaining revenue changes between two periods.
+    Decomposes changes hierarchically across region, category, segment, and customer.
+    Enforces sum(driver_deltas) == total_change invariant and strictly excludes cancelled orders.
+    """
+    try:
+        return decompose_change(
+            db=db,
+            metric=request.metric,
+            period_a=request.period_a,
+            period_b=request.period_b,
+            dimensions=request.dimensions,
+            top_n=request.top_n,
+            include_baseline=request.include_baseline or False
+        )
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Decomposition error: {str(e)}")
+
+
+@router.post("/tools/campaign-impact", response_model=CampaignImpactResponse)
+@router.post("/api/tools/campaign-impact", response_model=CampaignImpactResponse)
+def evaluate_campaign_impact(
+    request: CampaignImpactRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Deterministic Difference-in-Differences observational campaign impact analysis.
+    Evaluates revenue impact between exposed and control cohorts across before and after periods.
+    Always includes mandatory disclaimer: 'Observational evidence; causation not proven.'
+    """
+    try:
+        return campaign_impact(
+            db=db,
+            campaign_id=request.campaign_id,
+            min_sample_size=request.min_sample_size or 15
+        )
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Campaign impact error: {str(e)}")
+
+
+@router.post("/verify", response_model=VerificationResponse)
+@router.post("/api/verify", response_model=VerificationResponse)
+def verify_llm_answer(
+    request: VerificationRequest
+):
+    """
+    Deterministic numerical answer verification endpoint (Task 3).
+    Extracts every relevant numerical claim from an LLM-generated answer and verifies
+    whether each claim is supported by the supplied structured evidence within tolerance.
+    Enforces 'AI for reasoning, code for correctness':
+    - Returns 'PASS' if and only if all numerical claims are verified against evidence.
+    - Returns 'FAIL' if any numerical claim is unsupported.
+    """
+    try:
+        return verify_answer(
+            llm_text=request.llm_text,
+            evidence_list=request.evidence_list,
+            tolerance=request.tolerance if request.tolerance is not None else 0.05
+        )
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Verification error: {str(e)}")
 
 
 @router.post("/api/ask", response_model=AskResponse)

@@ -7,7 +7,12 @@ from app.core.config import settings
 from app.models.business_data import Base
 
 db_url = settings.DATABASE_URL
-if "pytest" in sys.modules or os.getenv("TESTING") == "1":
+
+# Only default to in-memory SQLite for tests if DATABASE_URL is NOT set to PostgreSQL and USE_POSTGRES is NOT 1
+is_testing = "pytest" in sys.modules or os.getenv("TESTING") == "1"
+is_postgres_forced = os.getenv("USE_POSTGRES") == "1" or "postgresql" in db_url.lower()
+
+if is_testing and not is_postgres_forced:
     db_url = "sqlite://"
     engine = create_engine(
         db_url,

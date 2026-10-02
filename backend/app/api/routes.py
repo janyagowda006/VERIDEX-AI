@@ -1,6 +1,6 @@
 import time
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, status, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, status, Request, File, UploadFile
 from fastapi.responses import Response, JSONResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -14,6 +14,8 @@ from app.tools.sql_tool import execute_read_only_sql
 from app.schemas.sql_tool import SQLQueryRequest, SQLQueryResult, SchemaContext
 from app.schemas.ai import AskRequest, AskResponse
 from app.schemas.auth import LoginRequest, Token, UserRead
+from app.schemas.data_upload import DataSourceUploadResponse
+from app.services.data_ingestion import process_uploaded_dataset
 from app.schemas.investigation import (
     InvestigationSummary,
     InvestigationDetail,
@@ -187,6 +189,45 @@ def get_sql_schema_tool(
     Debug endpoint to inspect the database schema context.
     """
     return get_database_schema(db)
+
+
+@router.post("/api/data-sources/upload", response_model=DataSourceUploadResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/api/data/upload", response_model=DataSourceUploadResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/data/upload", response_model=DataSourceUploadResponse, status_code=status.HTTP_201_CREATED)
+async def upload_data_source_file(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("ANALYST", "ADMIN"))
+):
+    """
+    Dynamic data ingestion endpoint accepting CSV (.csv) or Excel (.xlsx, .xls) multipart file uploads.
+    Validates file format, enforces size limits, normalizes columns to prevent SQL injection,
+    and ingests records into database table accessible to the AI investigator tool loop.
+    """
+    if not file or not file.filename:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No file attached to upload request."
+        )
+
+    try:
+        content = await file.read()
+        res_dict = process_uploaded_dataset(
+            file_bytes=content,
+            filename=file.filename,
+            db=db
+        )
+        return DataSourceUploadResponse(**res_dict)
+    except ValueError as val_err:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(val_err)
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"File ingestion execution error: {str(exc)}"
+        )
 
 
 @router.post("/api/ask", response_model=AskResponse)

@@ -1,9 +1,31 @@
 import os
+import io
+import re
 import csv
+import uuid
+import pandas as pd
 from datetime import datetime
-from typing import List, Tuple
+from typing import List, Tuple, Dict, Any, Optional
 from sqlalchemy.orm import Session
+from sqlalchemy import text, inspect
 from app.models.business_data import Customer, Product, Order, OrderItem
+
+ALLOWED_EXTENSIONS = {".csv", ".xlsx", ".xls"}
+MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024  # 25 MB limit
+
+
+def sanitize_identifier(identifier: str, default_prefix: str = "col") -> str:
+    """
+    Sanitizes a string to be a safe SQL table/column identifier.
+    Removes unsafe characters, enforces alphanumeric + underscores, and prevents SQL injection.
+    """
+    if not identifier:
+        return f"{default_prefix}_1"
+    cleaned = re.sub(r'[^a-zA-Z0-9_]', '_', str(identifier).strip())
+    cleaned = re.sub(r'_+', '_', cleaned).strip('_')
+    if not cleaned or not re.match(r'^[a-zA-Z_]', cleaned):
+        cleaned = f"{default_prefix}_{cleaned}"
+    return cleaned.lower()[:63]
 
 
 def validate_csv_data(data_dir: str) -> Tuple[bool, List[str]]:
@@ -132,7 +154,7 @@ def validate_csv_data(data_dir: str) -> Tuple[bool, List[str]]:
 
 def ingest_csv_to_db(data_dir: str, db: Session) -> dict:
     """
-    Validates CSV files and loads data into PostgreSQL tables within a single transaction.
+    Validates CSV files and loads data into PostgreSQL/SQLite tables within a single transaction.
     """
     is_valid, errors = validate_csv_data(data_dir)
     if not is_valid:
@@ -215,4 +237,94 @@ def ingest_csv_to_db(data_dir: str, db: Session) -> dict:
         "products_loaded": prod_count,
         "orders_loaded": order_count,
         "order_items_loaded": item_count
+    }
+
+
+def process_uploaded_dataset(
+    file_bytes: bytes,
+    filename: str,
+    db: Session
+) -> Dict[str, Any]:
+    """
+    Processes a dynamic user file upload (.csv, .xlsx, .xls) and ingests it into database.
+    - Validates file extension and size limits.
+    - Parses CSV/Excel with Pandas.
+    - Normalizes and sanitizes column and table names to prevent SQL injection.
+    - Loads dataset into target database table via SQLAlchemy bind.
+    - Returns structured metadata response.
+    """
+    if not file_bytes:
+        raise ValueError("Uploaded file content is empty.")
+
+    if len(file_bytes) > MAX_FILE_SIZE_BYTES:
+        raise ValueError(f"File size exceeds maximum allowed limit of {MAX_FILE_SIZE_BYTES // (1024 * 1024)}MB.")
+
+    base_name, ext = os.path.splitext(filename.strip())
+    ext_lower = ext.lower()
+
+    if ext_lower not in ALLOWED_EXTENSIONS:
+        raise ValueError(f"Unsupported file extension '{ext}'. Supported formats are: {', '.join(sorted(ALLOWED_EXTENSIONS))}.")
+
+    # Generate unique dataset ID and safe table name
+    dataset_id = f"ds_{uuid.uuid4().hex[:12]}"
+    clean_base = sanitize_identifier(base_name, default_prefix="dataset")
+    table_name = f"uploaded_{clean_base}_{dataset_id[:8]}"
+
+    # Parse file using Pandas
+    try:
+        buffer = io.BytesIO(file_bytes)
+        if ext_lower == ".csv":
+            df = pd.read_csv(buffer)
+        elif ext_lower in [".xlsx", ".xls"]:
+            df = pd.read_excel(buffer)
+        else:
+            raise ValueError(f"Unsupported format '{ext_lower}'.")
+    except Exception as parse_err:
+        raise ValueError(f"Failed to parse uploaded {ext_lower.upper()} file: {str(parse_err)}")
+
+    if df.empty:
+        raise ValueError("Uploaded dataset contains zero rows of data.")
+
+    # Column normalization & deduplication
+    raw_columns = list(df.columns)
+    seen_cols = set()
+    sanitized_cols = []
+
+    for idx, col in enumerate(raw_columns):
+        col_clean = sanitize_identifier(col, default_prefix=f"col_{idx + 1}")
+        unique_col = col_clean
+        dup_counter = 1
+        while unique_col in seen_cols:
+            unique_col = f"{col_clean}_{dup_counter}"
+            dup_counter += 1
+        seen_cols.add(unique_col)
+        sanitized_cols.append(unique_col)
+
+    df.columns = sanitized_cols
+
+    # Save to database
+    bind = db.get_bind()
+    try:
+        df.to_sql(
+            name=table_name,
+            con=bind,
+            if_exists="replace",
+            index=False
+        )
+        db.commit()
+    except Exception as db_err:
+        db.rollback()
+        raise ValueError(f"Database ingestion error for table '{table_name}': {str(db_err)}")
+
+    row_count = len(df)
+
+    return {
+        "dataset_id": dataset_id,
+        "filename": filename,
+        "format": ext_lower.replace(".", ""),
+        "table_name": table_name,
+        "columns": sanitized_cols,
+        "row_count": row_count,
+        "status": "loaded",
+        "message": f"Dataset '{filename}' successfully ingested into table '{table_name}' with {row_count} rows and {len(sanitized_cols)} columns."
     }

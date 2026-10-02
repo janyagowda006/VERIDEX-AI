@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>VERIDEX — Ask / Investigation Workspace</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0A0C10;--s1:#11141A;--s2:#181C24;--line:#242A35;--tx:#E8ECF2;--mu:#8B95A5;--pr:#4C8DFF;--fact:#5B9DFF;--der:#9A87F5;--inf:#E0A94A;--ok:#4CB782;--warn:#E0A94A;--neu:#8B95A5;
+--sans:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;--mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:14px/1.5 var(--sans);-webkit-font-smoothing:antialiased}
+.app{display:grid;grid-template-columns:216px minmax(0,1fr) 420px;min-height:100vh}
+aside{background:var(--s1);border-right:1px solid var(--line);padding:18px 12px;display:flex;flex-direction:column;position:sticky;top:0;height:100vh}
+.logo{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:.14em;font-size:13px;padding:0 8px 22px}
+.mark{width:20px;height:20px;border:2px solid var(--pr);border-radius:5px;position:relative;flex:none}
+.mark:after{content:"";position:absolute;left:4px;top:2px;width:5px;height:9px;border:solid var(--pr);border-width:0 2px 2px 0;transform:rotate(40deg)}
+.nav a{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:6px;color:var(--mu);text-decoration:none;font-weight:500;margin-bottom:2px}
+.nav a i{width:14px;height:14px;border:1.5px solid currentColor;border-radius:3px;flex:none;opacity:.8}
+.nav a.on{background:#4C8DFF18;color:var(--tx)}.nav a.on i{border-color:var(--pr)}
+.ws{margin-top:auto;border-top:1px solid var(--line);padding-top:12px;font-size:13px}
+.ws div{display:flex;align-items:center;gap:10px;padding:6px 8px}
+.av{width:28px;height:28px;border-radius:50%;background:var(--s2);border:1px solid var(--line);display:grid;place-items:center;font:600 11px var(--sans);flex:none}
+.ws small{display:block;color:var(--mu);font-size:11.5px}
+main{padding:24px 32px 48px;min-width:0}
+.crumb{color:var(--mu);font-size:12.5px;margin-bottom:14px;display:flex;justify-content:space-between}
+.card{background:var(--s1);border:1px solid var(--line);border-radius:10px}
+.cap{font:500 11px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--mu)}
+.qbox{padding:14px 18px;margin-bottom:14px}
+.qbox p{margin:4px 0 0;font-size:18px;font-weight:600;letter-spacing:-.01em}
+details.trace{margin-bottom:14px}
+details.trace summary{list-style:none;cursor:pointer;padding:11px 16px;display:flex;align-items:center;gap:10px;font-size:13px}
+details.trace summary::-webkit-details-marker{display:none}
+.chk{width:16px;height:16px;border-radius:50%;background:#4CB78222;border:1px solid var(--ok);color:var(--ok);font-size:10px;display:grid;place-items:center;flex:none}
+.trace summary .r{margin-left:auto;color:var(--mu);font:12px var(--mono)}
+.tl{padding:2px 16px 14px 16px;border-top:1px solid var(--line)}
+.tl div{display:flex;gap:10px;padding:7px 0;font-size:12.5px;align-items:center}
+.tl code{font:12px var(--mono);color:var(--tx)}
+.tl span.d{margin-left:auto;font:11.5px var(--mono);color:var(--mu)}
+.tl .chk{width:12px;height:12px}
+.ans{padding:20px 22px;margin-bottom:14px;border-color:#2B3A55}
+.ans h2{margin:6px 0 8px;font-size:22px;letter-spacing:-.02em;font-weight:650}
+.ans p{margin:0;color:#C6CEDA;font-size:15px;max-width:640px}
+.sec{display:flex;justify-content:space-between;align-items:center;margin:20px 0 8px}
+.sec a{color:var(--pr);font-size:12.5px}
+.claim{display:flex;gap:10px;align-items:flex-start;padding:11px 14px;border:1px solid var(--line);border-radius:8px;background:var(--s1);margin-bottom:8px;cursor:pointer;transition:border-color .12s}
+.claim:hover{border-color:#3A4658}
+.claim.on{border-color:var(--pr);background:#4C8DFF0D}
+.claim .t{flex:1}
+.claim .ev{font:11.5px var(--mono);color:var(--fact);border-bottom:1px dashed var(--fact);white-space:nowrap}
+.claim .ev.i{color:var(--inf);border-color:var(--inf)}
+.badge{font:500 10.5px var(--mono);letter-spacing:.05em;padding:2px 7px;border-radius:4px;border:1px solid;text-transform:uppercase;white-space:nowrap;margin-top:1px}
+.b-fact{color:var(--fact);border-color:#2B4A7A;background:#5B9DFF14}
+.b-der{color:var(--der);border-color:#4A407F;background:#9A87F514}
+.b-inf{color:var(--inf);border-color:#6E5526;background:#E0A94A14}
+.b-ok{color:var(--ok);border-color:#2A5C44;background:#4CB78214}
+.two{display:grid;grid-template-columns:1.3fr 1fr;gap:14px}
+.rec{padding:16px;border-left:3px solid var(--pr)}
+.rec h3{margin:6px 0 4px;font-size:17px}
+.rec p{margin:0 0 12px;color:var(--mu);font-size:13px}
+.rank{width:100%;border-collapse:collapse;font:12.5px var(--mono)}
+.rank td{padding:5px 0;border-top:1px solid var(--line)}
+.rank td:first-child{color:var(--mu);width:24px}.rank td:last-child{text-align:right}
+.rank tr.t td{color:var(--tx)}
+.bar{height:5px;background:var(--s2);border-radius:3px;min-width:70px}.bar i{display:block;height:100%;background:var(--pr);border-radius:3px}
+.rob{padding:16px}
+.rob .st{font-weight:600;color:var(--ok);margin:6px 0 4px}
+.rob p{margin:0 0 10px;color:var(--mu);font-size:13px}
+.sc{display:grid;grid-template-columns:auto 1fr auto;gap:6px 10px;font-size:12.5px;align-items:center}
+.sc span:nth-child(3n+1){color:var(--mu)}
+.sc b{font:500 12px var(--mono)}
+.follow{margin-top:14px;display:flex;gap:10px;align-items:center;background:var(--s1);border:1px solid var(--line);border-radius:8px;padding:8px 8px 8px 14px;color:var(--mu)}
+.follow span{flex:1}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:7px 13px;border-radius:7px;font:600 13px var(--sans);border:1px solid var(--line);color:var(--tx);background:transparent}
+.btn.p{background:var(--pr);border-color:var(--pr);color:#06101F}
+/* evidence panel */
+.panel{background:var(--s1);border-left:1px solid var(--line);height:100vh;position:sticky;top:0;overflow-y:auto;padding:20px 20px 32px}
+.ph{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+.chain{display:flex;gap:6px;flex-wrap:wrap;font:11px var(--mono);color:var(--mu);margin-bottom:16px;align-items:center}
+.chain b{color:var(--pr);font-weight:500;border:1px solid #2B4A7A;border-radius:4px;padding:1px 6px}
+.panel h3{margin:8px 0 4px;font-size:15px;font-weight:600}
+.panel .desc{color:var(--mu);font-size:13px;margin:0 0 14px}
+.blk{margin-bottom:14px}
+.blk .cap{margin-bottom:6px}
+pre{margin:0;background:#0C0F14;border:1px solid var(--line);border-radius:8px;padding:11px 13px;font:12px/1.6 var(--mono);color:#B9C3D3;overflow-x:auto}
+.k{color:var(--der)}.n{color:var(--inf)}
+.meta{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font:12px var(--mono)}
+.meta span:nth-child(odd){color:var(--mu)}
+table.rows{width:100%;border-collapse:collapse;font:12px var(--mono);border:1px solid var(--line);border-radius:8px}
+table.rows th{text-align:left;color:var(--mu);font-weight:500;padding:6px 10px;border-bottom:1px solid var(--line);background:var(--bg)}
+table.rows td{padding:6px 10px;border-bottom:1px solid var(--line)}
+table.rows tr:last-child td{border-bottom:0}
+table.rows tr.hl td{background:#4C8DFF12;color:var(--tx)}
+table.rows .r{text-align:right}
+.lim{border-left:2px solid var(--line);padding-left:10px;color:var(--mu);font-size:12.5px}
+.foot{display:flex;gap:8px;margin-top:16px}
+.note{color:var(--mu);font-size:11.5px;margin-top:22px}
+@media (max-width:1320px){.app{grid-template-columns:60px minmax(0,1fr) 380px}.nav a span,.logo span,.ws small,.ws b{display:none}.nav a{justify-content:center}.logo{justify-content:center;padding-inline:0}}
+@media (max-width:1000px){.app{grid-template-columns:60px minmax(0,1fr)}.panel{position:fixed;right:0;top:0;width:min(400px,92vw);z-index:5;box-shadow:-20px 0 40px rgba(0,0,0,.5)}.two{grid-template-columns:1fr}main{padding:20px 16px}}
+.mgrid{display:grid;grid-template-columns:150px minmax(0,1fr);gap:24px;align-items:start}.mc{min-width:0}
+.rail{position:sticky;top:24px}.rail a{display:flex;gap:9px;align-items:center;padding:5px 0;color:var(--mu);font-size:13px;cursor:pointer}.rail a:hover{color:var(--tx)}
+.rail a i{width:16px;height:16px;border-radius:50%;border:1px solid var(--line);font-style:normal;font-size:10px;display:grid;place-items:center;flex:none}
+.rail a.d{color:var(--tx)}.rail a.d i{border-color:var(--ok);background:#4CB78222;color:var(--ok)}
+.why{margin-top:12px;color:var(--mu);font-size:13px}.why b{font:500 11px var(--mono);letter-spacing:.1em;text-transform:uppercase;margin-right:8px;color:var(--pr)}
+.lm{margin-top:10px;padding-top:8px;border-top:1px solid var(--line);color:var(--mu);font:12px var(--mono)}
+.lk{display:inline-block;margin-top:8px;color:var(--pr);font-size:12.5px;text-decoration:none}
+@media (max-width:1100px){.mgrid{grid-template-columns:1fr}.rail{display:none}}</style></head><body>
+<div class="app">
+<aside>
+<div class="logo"><div class="mark"></div><span>VERIDEX</span></div>
+<div class="nav"><a href="#"><i></i><span>Overview</span></a><a class="on" href="#"><i></i><span>Investigations</span></a><a href="#"><i></i><span>Data Sources</span></a><a href="#"><i></i><span>Evidence</span></a><a href="#"><i></i><span>Decisions</span></a><a href="#"><i></i><span>History</span></a><a href="#"><i></i><span>Settings</span></a></div>
+<div class="ws"><div><span class="av">AC</span><span><b>Acme Retail</b><small>Workspace</small></span></div><div><span class="av">G</span><span><b>Gagandeep</b><small>Analyst</small></span></div></div>
+</aside>
+
+<main><div class="mgrid"><nav class="rail" id="rail"></nav><div class="mc"><div class="crumb"><span>Investigations / New</span><span>inv_0142 · Today 14:12</span></div>
+
+<div class="card qbox" id="s-q"><span class="cap">Question</span><p>What region should we prioritize for Q4?</p></div>
+
+<details class="card trace" id="s-inv">
+<summary><span class="chk">✓</span><b>Investigation complete</b><span style="color:var(--mu)">6 tool calls</span><span class="r">3.4 s ▾</span></summary>
+<div class="tl">
+<div><span class="chk">✓</span><code>inspect_schema</code><span>orders, regions</span><span class="d">0.2s</span></div>
+<div><span class="chk">✓</span><code>run_sql</code><span>revenue by region</span><span class="d">0.6s</span></div>
+<div><span class="chk">✓</span><code>run_sql</code><span>margin by region</span><span class="d">0.7s</span></div>
+<div><span class="chk">✓</span><code>calculate_derived</code><span>margin vs average</span><span class="d">0.1s</span></div>
+<div><span class="chk">✓</span><code>evaluate_decision</code><span>4 candidates, 3 criteria</span><span class="d">0.3s</span></div>
+<div><span class="chk">✓</span><code>check_robustness</code><span>3 alternate scenarios</span><span class="d">0.4s</span></div>
+</div></details>
+
+<div class="card ans" id="s-ans"><span class="cap">Answer</span>
+<h2>Prioritize North for Q4.</h2>
+<p>North has the highest revenue and margin of the four regions and stays first when the weighting is changed. East is the closest alternative.</p><div class="why"><b>Why</b> Revenue #1 · Margin #1 · Growth #2 → weighted score 0.90</div></div>
+
+<div class="sec" id="s-cl"><span class="cap">Claims · 3 supported</span><span style="color:var(--mu);font-size:12.5px">Select a claim to inspect its evidence</span></div>
+<div class="claim on" data-e="E-01"><span class="badge b-fact">Fact</span><span class="t">North generated the highest revenue at $4.82M.</span><span class="ev">E-01</span></div>
+<div class="claim" data-e="E-03"><span class="badge b-der">Derived</span><span class="t">North margin is 31.4%, 6.2 points above the regional average.</span><span class="ev">E-03</span></div>
+<div class="claim" data-e="E-05"><span class="badge b-inf">Inference</span><span class="t">North is the strongest candidate for additional Q4 investment.</span><span class="ev i">E-05</span></div>
+
+<div class="sec" id="s-dec"><span class="cap">Decision and robustness</span><a href="#">Open full analysis →</a></div>
+<div class="two">
+<div class="card rec"><span class="cap">Recommendation</span><h3>Prioritize North region</h3><p>Score 0.90 · supported by E-01, E-03, E-05</p>
+<table class="rank">
+<tr class="t"><td>1</td><td>North</td><td><div class="bar"><i style="width:90%"></i></div></td><td>0.90</td></tr>
+<tr><td>2</td><td>East</td><td><div class="bar"><i style="width:75%"></i></div></td><td>0.75</td></tr>
+<tr><td>3</td><td>South</td><td><div class="bar"><i style="width:39%"></i></div></td><td>0.39</td></tr>
+<tr><td>4</td><td>West</td><td><div class="bar"><i style="width:5%"></i></div></td><td>0.05</td></tr></table></div>
+<div class="card rob" id="s-rob"><span class="cap">Robustness check</span><div class="st">✓ Stable</div><p>Finding remains consistent across 3 alternate scenarios.</p><div class="sc"><span>Baseline</span><span></span><b>North</b><span>Margin ×2</span><span></span><b>North ✓</b><span>Revenue ×2</span><span></span><b>North ✓</b><span>Equal weights</span><span></span><b>North ✓</b></div><div class="lm">Lead margin 0.16 · threshold 0.05</div><a class="lk" href="#">View scenarios →</a></div>
+</div>
+
+<div class="sec"><span class="cap">Human approval</span></div><div class="card appr" id="s-ap" data-appr></div>
+<div class="follow"><span>Ask a follow-up about this investigation…</span><button class="btn p">Ask</button></div>
+<p class="note">Sample data shown for illustration.</p>
+</div></div></main>
+
+<div class="panel" id="panel"></div>
+</div>
+
+<script>
+const E={
+"E-01":{t:"FACT",bc:"b-fact",title:"Revenue by region, Q1–Q3",desc:"Total revenue per region from the orders table.",
+sql:`<span class="k">SELECT</span> region, <span class="k">SUM</span>(revenue) <span class="k">AS</span> rev
+<span class="k">FROM</span> orders
+<span class="k">WHERE</span> quarter <span class="k">IN</span> (<span class="n">'Q1'</span>,<span class="n">'Q2'</span>,<span class="n">'Q3'</span>)
+<span class="k">GROUP BY</span> region <span class="k">ORDER BY</span> rev <span class="k">DESC</span>;`,
+cols:["region","rev"],rows:[["North","4,820,311",1],["East","4,110,942"],["South","3,640,118"],["West","2,905,570"]],
+meta:[["source_type","sql_query"],["query_hash","a3f9…c21e"],["timestamp","2026-09-30 14:12:03"],["rows","4"],["duration","0.6 s"]],
+lim:"Covers Q1–Q3 only. Q4 is not yet in the data."},
+"E-03":{t:"DERIVED FACT",bc:"b-der",title:"North margin vs regional average",desc:"Calculated from E-02 (margin by region).",
+sql:`margin_north = <span class="n">31.4</span>
+avg_margin   = <span class="n">25.2</span>   <span style="color:var(--mu)"># mean of 4 regions</span>
+delta        = <span class="n">31.4</span> - <span class="n">25.2</span> = <span class="n">6.2</span> pts`,
+cols:["region","margin %"],rows:[["North","31.4",1],["East","27.9"],["South","26.1"],["West","15.4"]],
+meta:[["source_type","calculation"],["depends_on","E-02"],["timestamp","2026-09-30 14:12:04"],["method","deterministic"]],
+lim:"Unweighted average across regions; not weighted by revenue."},
+"E-05":{t:"INFERENCE",bc:"b-inf",title:"North as priority candidate",desc:"Reasoned from the decision ranking (E-01, E-03). Not a raw database fact.",
+sql:`ranking (weights: rev <span class="n">0.5</span>, margin <span class="n">0.3</span>, growth <span class="n">0.2</span>)
+North <span class="n">0.90</span> &gt; East <span class="n">0.75</span> &gt; South <span class="n">0.39</span> &gt; West <span class="n">0.05</span>`,
+cols:["criterion","weight"],rows:[["Revenue","0.5"],["Margin","0.3"],["Growth","0.2"]],
+meta:[["source_type","decision_analysis"],["depends_on","E-01, E-03, E-04"],["timestamp","2026-09-30 14:12:05"]],
+lim:"Weights are configured assumptions, not observed data."}};
+const p=document.getElementById('panel');
+function show(id){const e=E[id];
+document.querySelectorAll('.claim').forEach(c=>c.classList.toggle('on',c.dataset.e===id));
+p.innerHTML=`<div class="ph"><span class="cap">Evidence · ${id}</span><span class="badge ${e.bc}">${e.t}</span></div>
+<div class="chain">Answer › Claim › <b>${id}</b> › Calculation</div>
+<h3>${e.title}</h3><p class="desc">${e.desc}</p>
+<div class="blk"><div class="cap">${e.t==="FACT"?"SQL":"Calculation"}</div><pre>${e.sql}</pre></div>
+<div class="blk"><div class="cap">${e.t==="FACT"?"Returned rows":"Inputs"}</div><table class="rows"><tr>${e.cols.map((c,i)=>`<th class="${i?'r':''}">${c}</th>`).join('')}</tr>${e.rows.map(r=>`<tr class="${r[2]?'hl':''}"><td>${r[0]}</td><td class="r">${r[1]}</td></tr>`).join('')}</table></div>
+<div class="blk"><div class="cap">Execution metadata</div><div class="meta">${e.meta.map(m=>`<span>${m[0]}</span><span>${m[1]}</span>`).join('')}</div></div>
+<div class="blk"><div class="cap">Limitations</div><div class="lim">${e.lim}</div></div>
+<div class="foot"><button class="btn">Copy SQL</button><button class="btn">Open in Evidence Explorer</button></div>`}
+document.querySelectorAll('.claim').forEach(c=>c.onclick=()=>show(c.dataset.e));
+show("E-01");
+const ST=[["Question","s-q"],["Investigation","s-inv"],["Answer","s-ans"],["Claims","s-cl"],["Evidence","E-01"],["Calculations","E-03"],["Decision","s-dec"],["Robustness","s-rob"],["Approval","s-ap"]];
+function rail(){var a=(window.VXS||{}).approval||'pending';document.getElementById('rail').innerHTML='<div class="cap" style="margin-bottom:10px">Investigation</div>'+ST.map(function(x,i){var d=i<8||a!=='pending';return '<a data-t="'+x[1]+'" class="'+(d?'d':'')+'"><i>'+(d?'✓':'')+'</i>'+(x[0]==='Approval'&&a==='rejected'?'Rejected':x[0])+'</a>'}).join('')}
+document.getElementById('rail').onclick=function(e){var a=e.target.closest('a');if(!a)return;var t=a.dataset.t;if(t[0]==='E')show(t);else document.getElementById(t).scrollIntoView({behavior:'smooth',block:'start'})};
+document.addEventListener('vxstate',rail);rail();
+</script>
+<style>.b-pr{color:#4C8DFF;border-color:#2B4A7A;background:#4C8DFF14}.links span:hover{color:#E8ECF2}
+.appr{padding:16px 18px;border-left:3px solid var(--ap,#4C8DFF)}.appr .ah{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.appr p{margin:8px 0 12px;color:#C6CEDA;font-size:13.5px}.appr .ab{display:flex;gap:8px;flex-wrap:wrap}
+.apbtn{background:none;border:1px solid #242A35;color:#E8ECF2;border-radius:7px;padding:7px 14px;font:600 13px Inter,system-ui,sans-serif;cursor:pointer}.apbtn:hover{border-color:#3A4658}.apbtn.pr{background:#4C8DFF;border-color:#4C8DFF;color:#06101F}</style>
+<script>(function(){var go=function(k){parent.postMessage({veridex:k},'*')};
+var NAV={'Overview':'overview','Investigations':'ask','Data Sources':'sources','Evidence':'evidence','Decisions':'decision','History':'history','Settings':'settings'};
+var RULES=[{"r": "Open full analysis", "to": "decision"}, {"r": "View scenarios", "to": "robustness"}, {"s": ".logo", "to": "overview"}];
+var B={pending:'<span class="badge b-pr">Pending review</span>',approved:'<span class="badge b-ok">Approved</span>',rejected:'<span class="badge b-neu">Rejected</span>'};
+window.VXS={approval:'pending',at:''};
+function paint(){var S=window.VXS,a=S.approval;
+document.querySelectorAll('[data-apbadge]').forEach(function(el){el.innerHTML=B[a]});
+document.querySelectorAll('[data-appr]').forEach(function(el){
+el.style.setProperty('--ap',a==='approved'?'#4CB782':a==='rejected'?'#8B95A5':'#4C8DFF');
+el.innerHTML=a==='pending'?'<div class="ah"><span class="cap">Human approval</span>'+B.pending+'</div><p><b>Prioritize North region</b><br>Review the evidence, then approve or reject. VERIDEX recommends; you decide.</p><div class="ab"><button class="apbtn" data-a="ev">Review evidence</button><button class="apbtn" data-a="rej">Reject</button><button class="apbtn pr" data-a="ok">Approve</button></div>'
+:'<div class="ah"><span class="cap">Human approval</span>'+B[a]+'</div><p><b>'+(a==='approved'?'Approved':'Rejected')+'</b> by Gagandeep · '+S.at+'<br>Recorded with 7 evidence items and a Stable robustness check.</p><div class="ab"><button class="apbtn" data-a="undo">Undo</button></div>'})}
+window.addEventListener('message',function(e){if(e.data&&e.data.vxState){window.VXS=e.data.vxState;paint();document.dispatchEvent(new Event('vxstate'))}});
+var AT='Sep 30, 14:31';
+document.addEventListener('click',function(e){var b=e.target.closest('.apbtn[data-a]');if(!b)return;var a=b.dataset.a;
+if(a==='ev'){if(typeof show==='function'&&document.getElementById('panel'))show('E-01');else go('evidence')}
+else parent.postMessage({vxSet:{approval:a==='ok'?'approved':a==='rej'?'rejected':'pending',at:AT}},'*')});
+document.addEventListener('click',function(e){
+if(e.target.closest('.apbtn'))return;
+var n=e.target.closest('.nav a');if(n){e.preventDefault();var k=NAV[n.textContent.trim()];if(k)go(k);return}
+for(var i=0;i<RULES.length;i++){var u=RULES[i],el=e.target.closest(u.s||'a,button');if(!el)continue;
+if(u.r&&!new RegExp(u.r).test((el.textContent||'').trim()))continue;
+e.preventDefault();e.stopPropagation();go(u.to);return}
+var a=e.target.closest('a');if(a&&a.getAttribute('href')==='#')e.preventDefault()},true);
+paint()})();</script></body></html>

@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>VERIDEX — Decision Intelligence</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0A0C10;--s1:#11141A;--s2:#181C24;--line:#242A35;--tx:#E8ECF2;--mu:#8B95A5;--pr:#4C8DFF;--fact:#5B9DFF;--der:#9A87F5;--inf:#E0A94A;--ok:#4CB782;--warn:#E0A94A;
+--sans:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;--mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:14px/1.5 var(--sans);-webkit-font-smoothing:antialiased}
+.app{display:grid;grid-template-columns:216px minmax(0,1fr);min-height:100vh}
+aside.sb{background:var(--s1);border-right:1px solid var(--line);padding:18px 12px;display:flex;flex-direction:column;position:sticky;top:0;height:100vh}
+.logo{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:.14em;font-size:13px;padding:0 8px 22px}
+.mark{width:20px;height:20px;border:2px solid var(--pr);border-radius:5px;position:relative;flex:none}
+.mark:after{content:"";position:absolute;left:4px;top:2px;width:5px;height:9px;border:solid var(--pr);border-width:0 2px 2px 0;transform:rotate(40deg)}
+.nav a{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:6px;color:var(--mu);text-decoration:none;font-weight:500;margin-bottom:2px}
+.nav a i{width:14px;height:14px;border:1.5px solid currentColor;border-radius:3px;flex:none;opacity:.8}
+.nav a.on{background:#4C8DFF18;color:var(--tx)}.nav a.on i{border-color:var(--pr)}
+.ws{margin-top:auto;border-top:1px solid var(--line);padding-top:12px;font-size:13px}
+.ws div{display:flex;align-items:center;gap:10px;padding:6px 8px}
+.av{width:28px;height:28px;border-radius:50%;background:var(--s2);border:1px solid var(--line);display:grid;place-items:center;font:600 11px var(--sans);flex:none}
+.ws small{display:block;color:var(--mu);font-size:11.5px}
+main{padding:28px 36px 48px;min-width:0;max-width:1224px}
+.crumb{color:var(--mu);font-size:12.5px;margin-bottom:10px}.crumb a{color:var(--pr);text-decoration:none}
+h1{margin:0;font-size:24px;letter-spacing:-.02em;font-weight:650}
+.sub{margin:2px 0 20px;color:var(--mu)}
+.card{background:var(--s1);border:1px solid var(--line);border-radius:10px}
+.cap{font:500 11px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--mu)}
+.badge{font:500 10.5px var(--mono);letter-spacing:.05em;padding:2px 7px;border-radius:4px;border:1px solid;text-transform:uppercase;white-space:nowrap}
+.b-fact{color:var(--fact);border-color:#2B4A7A;background:#5B9DFF14}
+.b-der{color:var(--der);border-color:#4A407F;background:#9A87F514}
+.b-inf{color:var(--inf);border-color:#6E5526;background:#E0A94A14}
+.b-ok{color:var(--ok);border-color:#2A5C44;background:#4CB78214}
+.b-neu{color:var(--mu);border-color:#3A424F;background:#8B95A514}
+.rec{padding:20px 22px;border-left:3px solid var(--pr);display:grid;grid-template-columns:minmax(0,1fr) auto;gap:20px;margin-bottom:18px;align-items:center}
+.rec h2{margin:6px 0 6px;font-size:22px;letter-spacing:-.02em;font-weight:650}
+.rec p{margin:0 0 12px;color:#C6CEDA;max-width:640px}
+.eids{display:flex;gap:8px;align-items:center;flex-wrap:wrap;color:var(--mu);font-size:12.5px}
+.eid{font:11.5px var(--mono);color:var(--fact);border-bottom:1px dashed var(--fact)}
+.side{text-align:right}
+.score{font:500 34px var(--mono);letter-spacing:-.03em}
+.side .cap{display:block;margin-bottom:2px}
+.side .badge{display:inline-block;margin-top:8px}
+.cols{display:grid;grid-template-columns:minmax(0,1.75fr) minmax(0,1fr);gap:18px}
+.stk{display:grid;gap:18px;align-content:start}
+.hd{display:flex;justify-content:space-between;align-items:center;padding:14px 16px 10px;gap:10px}
+.seg{display:flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+.seg button{background:none;border:0;color:var(--mu);padding:4px 11px;font:500 12px var(--sans);cursor:pointer}
+.seg button.on{background:var(--s2);color:var(--tx)}
+.scroll{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{font:500 10.5px var(--mono);letter-spacing:.08em;color:var(--mu);text-align:left;padding:8px 14px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);text-transform:uppercase;white-space:nowrap}
+td{padding:11px 14px;border-bottom:1px solid var(--line);white-space:nowrap}
+tr:last-child td{border-bottom:0}
+th.r,td.r{text-align:right}
+td.m{font-family:var(--mono)}
+tr.top td{background:#4C8DFF10}
+tr.inel td{color:var(--mu)}
+th small{display:block;font-size:10px;letter-spacing:0;text-transform:none;color:var(--mu)}
+.rk{color:var(--mu);font-family:var(--mono);width:34px}
+.bars{padding:4px 16px 16px;display:grid;gap:10px}
+.br{display:grid;grid-template-columns:60px 1fr 44px;gap:12px;align-items:center;font-size:13px}
+.br .t{height:14px;background:var(--s2);border-radius:3px;display:flex;overflow:hidden}
+.br .t i{display:block;height:100%}
+.br b{font:500 12.5px var(--mono);text-align:right}
+.lg{display:flex;gap:16px;padding:0 16px 14px;color:var(--mu);font-size:12px;flex-wrap:wrap}
+.lg span:before{content:"";display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px;background:var(--c)}
+.crit{padding:4px 16px 14px;display:grid;gap:12px}
+.crit div{display:grid;gap:5px}
+.crit .l{display:flex;justify-content:space-between;font-size:13px}
+.crit .l b{font:500 12.5px var(--mono)}
+.crit .w{height:5px;background:var(--s2);border-radius:3px}.crit .w i{display:block;height:100%;border-radius:3px;background:var(--c)}
+.crit small{color:var(--mu);font-size:11.5px}
+.th{padding:2px 16px 14px;display:grid;gap:8px;font-size:13px}
+.th div{display:flex;justify-content:space-between;gap:8px;align-items:center}
+.ev{padding:0 0 6px}
+.ev div{padding:9px 16px;border-top:1px solid var(--line);display:flex;gap:10px;align-items:center;font-size:13px}
+.ev div span:nth-child(3){flex:1}
+.rl{padding:14px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px}
+.rl a{color:var(--pr);font-size:12.5px;text-decoration:none}
+.note{color:var(--mu);font-size:11.5px;margin-top:20px}
+@media (max-width:1180px){.app{grid-template-columns:60px minmax(0,1fr)}.nav a span,.logo span,.ws small,.ws b{display:none}.nav a{justify-content:center}.logo{justify-content:center;padding-inline:0}main{padding:24px 20px}.cols{grid-template-columns:1fr}.rec{grid-template-columns:1fr}.side{text-align:left}}
+.rbb{padding:0 16px 16px}.rbb p{margin:0 0 10px;color:#C6CEDA;font-size:13px}.sc2 div{display:flex;justify-content:space-between;padding:7px 0;border-top:1px solid var(--line);font-size:13px}.sc2 span{color:var(--mu)}.sc2 b{font:500 12.5px var(--mono)}.lm2{display:flex;justify-content:space-between;margin:8px 0 10px;color:var(--mu);font-size:12.5px;border-top:1px solid var(--line);padding-top:8px}.lm2 b{font-family:var(--mono);color:var(--tx)}.rbb a{color:var(--pr);font-size:12.5px;text-decoration:none}</style></head><body>
+<div class="app">
+<aside class="sb">
+<div class="logo"><div class="mark"></div><span>VERIDEX</span></div>
+<div class="nav"><a href="#"><i></i><span>Overview</span></a><a href="#"><i></i><span>Investigations</span></a><a href="#"><i></i><span>Data Sources</span></a><a href="#"><i></i><span>Evidence</span></a><a class="on" href="#"><i></i><span>Decisions</span></a><a href="#"><i></i><span>History</span></a><a href="#"><i></i><span>Settings</span></a></div>
+<div class="ws"><div><span class="av">AC</span><span><b>Acme Retail</b><small>Workspace</small></span></div><div><span class="av">G</span><span><b>Gagandeep</b><small>Analyst</small></span></div></div>
+</aside>
+<main>
+<div class="crumb"><a href="#">Decisions</a> / from inv_0142</div>
+<h1>What region should we prioritize for Q4?</h1>
+<p class="sub">4 candidates · 3 criteria · 1 threshold condition</p>
+
+<div class="card rec">
+<div><span class="cap">Recommendation</span><h2>Prioritize North region</h2>
+<p>North ranks first on revenue and margin and clears the minimum-margin threshold. Its growth is moderate, and East is the closest alternative.</p>
+<div class="eids"><span>Supported by</span><span class="eid">E-01</span><span class="eid">E-02</span><span class="eid">E-03</span><span class="eid">E-05</span></div></div>
+<div class="side"><span class="cap">Weighted score</span><div class="score">0.90</div><span class="badge b-ok">✓ Stable</span><div style="margin-top:8px"><a style="color:var(--pr);font-size:12.5px" href="#">View robustness →</a></div></div>
+</div>
+
+<div class="card appr" data-appr style="margin-bottom:18px"></div>
+<div class="cols">
+<div class="stk">
+<div class="card"><div class="hd"><span class="cap">Candidate comparison</span><div class="seg"><button class="on" data-v="norm">Normalized</button><button data-v="raw">Raw values</button></div></div>
+<div class="scroll"><table><thead><tr><th>#</th><th>Candidate</th><th class="r">Revenue<small>weight 0.5</small></th><th class="r">Margin<small>weight 0.3</small></th><th class="r">Growth<small>weight 0.2</small></th><th class="r">Score</th></tr></thead><tbody id="tb"></tbody></table></div></div>
+
+<div class="card"><div class="hd"><span class="cap">Score composition</span></div>
+<div class="bars" id="bars"></div>
+<div class="lg"><span style="--c:#4C8DFF">Revenue</span><span style="--c:#7DAEFF">Margin</span><span style="--c:#3B4C6B">Growth</span></div></div>
+</div>
+
+<div class="stk">
+<div class="card"><div class="hd"><span class="cap">Criteria and weights</span></div><div class="crit">
+<div style="--c:#4C8DFF"><div class="l"><span>Revenue</span><b>0.5</b></div><div class="w"><i style="width:50%"></i></div><small>Higher is better · E-01</small></div>
+<div style="--c:#7DAEFF"><div class="l"><span>Margin</span><b>0.3</b></div><div class="w"><i style="width:30%"></i></div><small>Higher is better · E-02</small></div>
+<div style="--c:#3B4C6B"><div class="l"><span>Growth (QoQ)</span><b>0.2</b></div><div class="w"><i style="width:20%"></i></div><small>Higher is better · E-04</small></div></div></div>
+
+<div class="card"><div class="hd"><span class="cap">Threshold conditions</span></div><div class="th">
+<div><span>Margin ≥ 20%</span><span class="badge b-ok">3 pass</span></div>
+<div style="color:var(--mu);font-size:12.5px;justify-content:flex-start">West (15.4%) does not meet the threshold and is not eligible.</div></div></div>
+
+<div class="card"><div class="hd"><span class="cap">Robustness check</span><span class="badge b-ok">✓ Stable</span></div><div class="rbb"><p>Finding remains consistent across 3 alternate scenarios.</p><div class="sc2"><div><span>Baseline</span><b>North</b></div><div><span>Margin ×2</span><b>North ✓</b></div><div><span>Revenue ×2</span><b>North ✓</b></div><div><span>Equal weights</span><b>North ✓</b></div></div><div class="lm2"><span>Lead margin <b>0.16</b></span><span>Threshold <b>0.05</b></span></div><a href="#">View scenarios →</a></div></div>
+
+<div class="card"><div class="hd"><span class="cap">Supporting evidence</span><a style="color:var(--pr);font-size:12.5px" href="#">Explorer</a></div><div class="ev">
+<div><span class="eid">E-01</span><span class="badge b-fact">Fact</span><span>Revenue by region</span></div>
+<div><span class="eid">E-03</span><span class="badge b-der">Derived</span><span>Margin vs average</span></div>
+<div><span class="eid">E-05</span><span class="badge b-inf">Inference</span><span>North as priority</span></div></div></div>
+</div></div>
+<p class="note">Sample data shown for illustration. Scores use min–max normalization across candidates.</p>
+</main></div>
+<script>
+const C=[
+{n:"North",raw:["$4.82M","31.4%","+3.1%"],nm:[1,1,.523],ok:1},
+{n:"East",raw:["$4.11M","27.9%","+5.2%"],nm:[.628,.781,1],ok:1},
+{n:"South",raw:["$3.64M","26.1%","+0.8%"],nm:[.382,.669,0],ok:1},
+{n:"West",raw:["$2.91M","15.4%","+1.9%"],nm:[0,0,.25],ok:0}];
+const W=[.5,.3,.2],col=["#4C8DFF","#7DAEFF","#3B4C6B"];
+C.forEach(c=>{c.ct=c.nm.map((v,i)=>v*W[i]);c.s=c.ct.reduce((a,b)=>a+b,0)});
+const R=C.filter(c=>c.ok).sort((a,b)=>b.s-a.s).concat(C.filter(c=>!c.ok));
+function tbl(v){document.getElementById('tb').innerHTML=R.map((c,i)=>`<tr class="${i==0?'top':''} ${c.ok?'':'inel'}"><td class="rk">${c.ok?i+1:'—'}</td><td>${c.n}${c.ok?'':' <span class="badge b-neu">Below threshold</span>'}</td>${(v==='raw'?c.raw:c.nm.map(x=>x.toFixed(2))).map(x=>`<td class="r m">${x}</td>`).join('')}<td class="r m">${c.s.toFixed(2)}</td></tr>`).join('')}
+document.querySelectorAll('.seg button').forEach(b=>b.onclick=()=>{document.querySelectorAll('.seg button').forEach(x=>x.classList.toggle('on',x===b));tbl(b.dataset.v)});
+tbl('norm');
+document.getElementById('bars').innerHTML=R.map(c=>`<div class="br"><span style="${c.ok?'':'color:var(--mu)'}">${c.n}</span><div class="t">${c.ct.map((v,i)=>`<i style="width:${v*100}%;background:${col[i]};${c.ok?'':'opacity:.4'}"></i>`).join('')}</div><b>${c.s.toFixed(2)}</b></div>`).join('');
+</script><style>.b-pr{color:#4C8DFF;border-color:#2B4A7A;background:#4C8DFF14}.links span:hover{color:#E8ECF2}
+.appr{padding:16px 18px;border-left:3px solid var(--ap,#4C8DFF)}.appr .ah{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.appr p{margin:8px 0 12px;color:#C6CEDA;font-size:13.5px}.appr .ab{display:flex;gap:8px;flex-wrap:wrap}
+.apbtn{background:none;border:1px solid #242A35;color:#E8ECF2;border-radius:7px;padding:7px 14px;font:600 13px Inter,system-ui,sans-serif;cursor:pointer}.apbtn:hover{border-color:#3A4658}.apbtn.pr{background:#4C8DFF;border-color:#4C8DFF;color:#06101F}</style>
+<script>(function(){var go=function(k){parent.postMessage({veridex:k},'*')};
+var NAV={'Overview':'overview','Investigations':'ask','Data Sources':'sources','Evidence':'evidence','Decisions':'decision','History':'history','Settings':'settings'};
+var RULES=[{"r": "View robustness|View scenarios", "to": "robustness"}, {"r": "^Explorer", "to": "evidence"}, {"s": ".logo", "to": "overview"}];
+var B={pending:'<span class="badge b-pr">Pending review</span>',approved:'<span class="badge b-ok">Approved</span>',rejected:'<span class="badge b-neu">Rejected</span>'};
+window.VXS={approval:'pending',at:''};
+function paint(){var S=window.VXS,a=S.approval;
+document.querySelectorAll('[data-apbadge]').forEach(function(el){el.innerHTML=B[a]});
+document.querySelectorAll('[data-appr]').forEach(function(el){
+el.style.setProperty('--ap',a==='approved'?'#4CB782':a==='rejected'?'#8B95A5':'#4C8DFF');
+el.innerHTML=a==='pending'?'<div class="ah"><span class="cap">Human approval</span>'+B.pending+'</div><p><b>Prioritize North region</b><br>Review the evidence, then approve or reject. VERIDEX recommends; you decide.</p><div class="ab"><button class="apbtn" data-a="ev">Review evidence</button><button class="apbtn" data-a="rej">Reject</button><button class="apbtn pr" data-a="ok">Approve</button></div>'
+:'<div class="ah"><span class="cap">Human approval</span>'+B[a]+'</div><p><b>'+(a==='approved'?'Approved':'Rejected')+'</b> by Gagandeep · '+S.at+'<br>Recorded with 7 evidence items and a Stable robustness check.</p><div class="ab"><button class="apbtn" data-a="undo">Undo</button></div>'})}
+window.addEventListener('message',function(e){if(e.data&&e.data.vxState){window.VXS=e.data.vxState;paint();document.dispatchEvent(new Event('vxstate'))}});
+var AT='Sep 30, 14:31';
+document.addEventListener('click',function(e){var b=e.target.closest('.apbtn[data-a]');if(!b)return;var a=b.dataset.a;
+if(a==='ev'){if(typeof show==='function'&&document.getElementById('panel'))show('E-01');else go('evidence')}
+else parent.postMessage({vxSet:{approval:a==='ok'?'approved':a==='rej'?'rejected':'pending',at:AT}},'*')});
+document.addEventListener('click',function(e){
+if(e.target.closest('.apbtn'))return;
+var n=e.target.closest('.nav a');if(n){e.preventDefault();var k=NAV[n.textContent.trim()];if(k)go(k);return}
+for(var i=0;i<RULES.length;i++){var u=RULES[i],el=e.target.closest(u.s||'a,button');if(!el)continue;
+if(u.r&&!new RegExp(u.r).test((el.textContent||'').trim()))continue;
+e.preventDefault();e.stopPropagation();go(u.to);return}
+var a=e.target.closest('a');if(a&&a.getAttribute('href')==='#')e.preventDefault()},true);
+paint()})();</script></body></html>

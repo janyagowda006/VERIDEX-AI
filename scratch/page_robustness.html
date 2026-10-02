@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>VERIDEX — Robustness Analysis</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0A0C10;--s1:#11141A;--s2:#181C24;--line:#242A35;--tx:#E8ECF2;--mu:#8B95A5;--pr:#4C8DFF;--fact:#5B9DFF;--ok:#4CB782;--warn:#E0A94A;--neu:#8B95A5;
+--sans:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;--mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:14px/1.5 var(--sans);-webkit-font-smoothing:antialiased}
+.app{display:grid;grid-template-columns:216px minmax(0,1fr);min-height:100vh}
+aside.sb{background:var(--s1);border-right:1px solid var(--line);padding:18px 12px;display:flex;flex-direction:column;position:sticky;top:0;height:100vh}
+.logo{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:.14em;font-size:13px;padding:0 8px 22px}
+.mark{width:20px;height:20px;border:2px solid var(--pr);border-radius:5px;position:relative;flex:none}
+.mark:after{content:"";position:absolute;left:4px;top:2px;width:5px;height:9px;border:solid var(--pr);border-width:0 2px 2px 0;transform:rotate(40deg)}
+.nav a{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:6px;color:var(--mu);text-decoration:none;font-weight:500;margin-bottom:2px}
+.nav a i{width:14px;height:14px;border:1.5px solid currentColor;border-radius:3px;flex:none;opacity:.8}
+.nav a.on{background:#4C8DFF18;color:var(--tx)}.nav a.on i{border-color:var(--pr)}
+.ws{margin-top:auto;border-top:1px solid var(--line);padding-top:12px;font-size:13px}
+.ws div{display:flex;align-items:center;gap:10px;padding:6px 8px}
+.av{width:28px;height:28px;border-radius:50%;background:var(--s2);border:1px solid var(--line);display:grid;place-items:center;font:600 11px var(--sans);flex:none}
+.ws small{display:block;color:var(--mu);font-size:11.5px}
+main{padding:28px 36px 48px;min-width:0;max-width:1100px}
+.crumb{color:var(--mu);font-size:12.5px;margin-bottom:10px}.crumb a{color:var(--pr);text-decoration:none}
+.top{display:flex;justify-content:space-between;gap:16px;align-items:flex-end;flex-wrap:wrap;margin-bottom:18px}
+h1{margin:0;font-size:24px;letter-spacing:-.02em;font-weight:650}
+.sub{margin:2px 0 0;color:var(--mu)}
+.demo{display:flex;align-items:center;gap:10px;color:var(--mu);font-size:12px}
+.seg{display:flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+.seg button{background:none;border:0;color:var(--mu);padding:5px 12px;font:500 12px var(--sans);cursor:pointer}
+.seg button.on{background:var(--s2);color:var(--tx)}
+.card{background:var(--s1);border:1px solid var(--line);border-radius:10px}
+.cap{font:500 11px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--mu)}
+.badge{font:500 10.5px var(--mono);letter-spacing:.05em;padding:2px 7px;border-radius:4px;border:1px solid;text-transform:uppercase;white-space:nowrap}
+.b-ok{color:var(--ok);border-color:#2A5C44;background:#4CB78214}
+.b-warn{color:var(--warn);border-color:#6E5526;background:#E0A94A14}
+.b-neu{color:var(--neu);border-color:#3A424F;background:#8B95A514}
+.b-mu{color:var(--mu);border-color:var(--line)}
+.status{padding:20px 22px;border-left:3px solid var(--c);margin-bottom:18px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:24px;align-items:center}
+.status .st{font-size:22px;font-weight:650;letter-spacing:-.02em;color:var(--c);margin:6px 0 4px}
+.status p{margin:0;color:#C6CEDA;max-width:560px}
+.cmp{display:flex;gap:10px;align-items:center}
+.cmp .box{border:1px solid var(--line);border-radius:8px;padding:10px 14px;background:var(--bg);min-width:120px}
+.cmp .box b{display:block;font-size:16px;margin-top:2px}
+.cmp .ar{color:var(--mu);font-size:18px}
+.sec{margin:22px 0 10px;display:flex;justify-content:space-between;align-items:center}
+.scn{margin-bottom:14px}
+.sh{padding:14px 16px;display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap}
+.sh h3{margin:0;font-size:15px}
+.sh p{margin:2px 0 0;color:var(--mu);font-size:12.5px}
+.w{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.w span{font:11.5px var(--mono);color:var(--mu);border:1px solid var(--line);border-radius:5px;padding:1px 7px}
+.w span.ch{color:var(--warn);border-color:#6E5526}
+.scroll{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{font:500 10.5px var(--mono);letter-spacing:.08em;color:var(--mu);text-align:left;padding:8px 16px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);text-transform:uppercase;white-space:nowrap}
+td{padding:10px 16px;border-bottom:1px solid var(--line);white-space:nowrap}
+tr:last-child td{border-bottom:0}
+th.r,td.r{text-align:right}
+td.m{font-family:var(--mono)}
+tr.chg td{background:#E0A94A0D}
+.up{color:var(--ok)}.dn{color:var(--warn)}.eq{color:var(--mu)}
+.mini{display:inline-block;height:6px;border-radius:3px;vertical-align:middle;margin-right:8px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.pad{padding:16px}
+.pad h3{margin:6px 0 6px;font-size:15px}
+.pad p{margin:0;color:var(--mu);font-size:13px}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font:12px var(--mono);margin-top:12px}
+.kv span:nth-child(odd){color:var(--mu)}
+.next{border-left:3px solid var(--c);padding:12px 16px;background:var(--s1);border-radius:0 10px 10px 0;border-top:1px solid var(--line);border-right:1px solid var(--line);border-bottom:1px solid var(--line);color:#C6CEDA;margin-top:14px}
+.empty{padding:22px 16px;color:var(--mu);border-top:1px dashed var(--line);margin:0 16px 16px;border-radius:8px;border:1px dashed var(--line)}
+.note{color:var(--mu);font-size:11.5px;margin-top:20px}
+@media (max-width:1180px){.app{grid-template-columns:60px minmax(0,1fr)}.nav a span,.logo span,.ws small,.ws b{display:none}.nav a{justify-content:center}.logo{justify-content:center;padding-inline:0}main{padding:24px 20px}.status{grid-template-columns:1fr}.grid2{grid-template-columns:1fr}}
+.lm{margin-top:10px;color:var(--mu);font:12px var(--mono)}</style></head><body>
+<div class="app">
+<aside class="sb">
+<div class="logo"><div class="mark"></div><span>VERIDEX</span></div>
+<div class="nav"><a href="#"><i></i><span>Overview</span></a><a href="#"><i></i><span>Investigations</span></a><a href="#"><i></i><span>Data Sources</span></a><a href="#"><i></i><span>Evidence</span></a><a class="on" href="#"><i></i><span>Decisions</span></a><a href="#"><i></i><span>History</span></a><a href="#"><i></i><span>Settings</span></a></div>
+<div class="ws"><div><span class="av">AC</span><span><b>Acme Retail</b><small>Workspace</small></span></div><div><span class="av">G</span><span><b>Gagandeep</b><small>Analyst</small></span></div></div>
+</aside>
+<main>
+<div class="crumb"><a href="#">Decisions</a> / <a href="#">Prioritize North region</a> / Robustness</div>
+<div class="top"><div><h1>Robustness analysis</h1><p class="sub">Does the recommendation survive different assumptions?</p></div>
+<div class="demo">Preview state<div class="seg" id="sw"><button class="on" data-s="STABLE">Stable</button><button data-s="SENSITIVE">Sensitive</button><button data-s="INSUFFICIENT_EVIDENCE">Insufficient</button></div></div></div>
+<div id="out"></div>
+<p class="note">Sample data shown for illustration. The state switch above is a design preview control, not a product feature.</p>
+</main></div>
+<script>
+const N={North:[1,1,.523],East:[.628,.781,1],South:[.382,.669,0]},B=[.5,.3,.2];
+const norm=w=>{const t=w.reduce((a,b)=>a+b,0);return w.map(x=>x/t)};
+const rank=w=>{const n=norm(w);return Object.entries(N).map(([k,v])=>({k,s:v.reduce((a,x,i)=>a+x*n[i],0)})).sort((a,b)=>b.s-a.s)};
+const base=rank(B),bpos=Object.fromEntries(base.map((r,i)=>[r.k,i+1])),bsc=Object.fromEntries(base.map(r=>[r.k,r.s]));
+const SC={m:{t:"Margin weight ×2",d:"Margin matters more than revenue growth.",w:[.5,.6,.2],ch:1},g:{t:"Growth weight ×3",d:"Recent momentum matters much more.",w:[.5,.3,.6],ch:2},r:{t:"Revenue weight ×2",d:"Scale matters more than margin.",w:[1,.3,.2],ch:0},e:{t:"Equal weights",d:"All criteria count the same.",w:[1,1,1],ch:-1}};
+const LM={STABLE:'<div class="lm">Lead margin 0.16 · minimum required 0.05</div>',SENSITIVE:'<div class="lm">Lead flips by 0.03 in one scenario · minimum required 0.05</div>',INSUFFICIENT_EVIDENCE:''};
+const CF={STABLE:{c:"var(--ok)",b:"b-ok",l:"✓ Stable",p:"Finding remains consistent across 3 alternate scenarios.",sc:["m","r","e"]},
+SENSITIVE:{c:"var(--warn)",b:"b-warn",l:"◐ Sensitive",p:"The recommended candidate changes under the alternate scenario.",sc:["m","g"]},
+INSUFFICIENT_EVIDENCE:{c:"var(--neu)",b:"b-neu",l:"○ Insufficient evidence",p:"Insufficient evidence to determine robustness.",sc:[]}};
+const f=x=>x.toFixed(2);
+function scn(k){const s=SC[k],r=rank(s.w),wl=["Revenue","Margin","Growth"],n=norm(s.w);
+const top=r[0].k,chg=top!==base[0].k;
+const rows=r.map((x,i)=>{const d=bpos[x.k]-(i+1);return `<tr class="${bpos[x.k]!==i+1?'chg':''}"><td class="m">${i+1}</td><td>${x.k}</td><td class="r m">#${bpos[x.k]} · ${f(bsc[x.k])}</td><td class="r m"><span class="mini" style="width:${x.s*70}px;background:${chg&&i==0?'var(--warn)':'var(--pr)'}"></span>${f(x.s)}</td><td class="r m ${d>0?'up':d<0?'dn':'eq'}">${d>0?'▲ '+d:d<0?'▼ '+(-d):'—'}</td></tr>`}).join('');
+return `<div class="card scn"><div class="sh"><div><span class="cap">Scenario</span><h3>${s.t}</h3><p>${s.d}</p><div class="w">${wl.map((l,i)=>`<span class="${i==s.ch?'ch':''}">${l} ${f(n[i])}</span>`).join('')}</div></div><span class="badge ${chg?'b-warn':'b-ok'}">${chg?top+' becomes #1':base[0].k+' remains #1'}</span></div>
+<div class="scroll"><table><thead><tr><th>Rank</th><th>Candidate</th><th class="r">Baseline</th><th class="r">Scenario score</th><th class="r">Shift</th></tr></thead><tbody>${rows}</tbody></table></div></div>`}
+function render(s){const c=CF[s],sc=c.sc.map(scn).join('');
+let cmp;
+if(s==="STABLE")cmp=`<div class="box"><span class="cap">Baseline</span><b>North #1</b></div><span class="ar">→</span><div class="box"><span class="cap">All 3 scenarios</span><b>North #1</b></div>`;
+else if(s==="SENSITIVE")cmp=`<div class="box"><span class="cap">Baseline</span><b>North #1</b></div><span class="ar">→</span><div class="box" style="border-color:#6E5526"><span class="cap">Growth ×3</span><b style="color:var(--warn)">East #1</b></div>`;
+else cmp=`<div class="box"><span class="cap">Baseline</span><b>North #1</b></div><span class="ar">→</span><div class="box"><span class="cap">Scenario</span><b style="color:var(--mu)">Not tested</b></div>`;
+const out=s==="INSUFFICIENT_EVIDENCE"?`<div class="empty">No alternate scenario could be evaluated. Only one quarter of growth data is available, so a growth-weighted scenario would not be reliable.</div>`
+:`<div class="grid2"><div class="card pad"><span class="cap">Outlier sensitivity</span><h3>Largest single order removed</h3><p>Excluding North's largest order (−$0.31M, 6.4% of its revenue) leaves North first. Its lead over East narrows from 0.16 to 0.10.</p><div class="kv"><span>Result</span><span>North #1 · unchanged</span></div></div><div class="card pad"><span class="cap">Metric changes</span><h3>North revenue $4.82M → $4.51M</h3><p>East, South and West are unaffected by this exclusion.</p><div class="kv"><span>Margin</span><span>31.4% → 31.6%</span><span>Score</span><span>0.90 → 0.90</span></div></div></div>`;
+const nx={STABLE:"You can act on this recommendation. Conclusions stay the same across the tested assumptions.",SENSITIVE:"North leads on the baseline weights, but East is ahead if growth is weighted heavily. Confirm how much weight growth deserves before committing.",INSUFFICIENT_EVIDENCE:"Treat the recommendation as provisional. More periods of growth data would allow scenarios to be tested."}[s];
+document.getElementById('out').innerHTML=`<div class="card status" style="--c:${c.c}"><div><span class="cap">Robustness check</span><div class="st">${c.l}</div><p>${c.p}</p>${LM[s]}</div><div class="cmp">${cmp}</div></div>
+<div class="sec"><span class="cap">${c.sc.length?c.sc.length+' alternate scenario'+(c.sc.length>1?'s':''):'Scenarios'}</span><span class="badge b-mu">Baseline: Revenue 0.50 · Margin 0.30 · Growth 0.20</span></div>
+${sc||''}${s==="INSUFFICIENT_EVIDENCE"?`<div class="card scn">${out}</div>`:`<div class="sec"><span class="cap">Outliers</span></div>${out}`}
+<div class="next" style="--c:${c.c}"><span class="cap">What this means</span><div style="margin-top:4px">${nx}</div></div>`}
+document.querySelectorAll('#sw button').forEach(b=>b.onclick=()=>{document.querySelectorAll('#sw button').forEach(x=>x.classList.toggle('on',x===b));render(b.dataset.s)});
+render("STABLE");
+</script><style>.b-pr{color:#4C8DFF;border-color:#2B4A7A;background:#4C8DFF14}.links span:hover{color:#E8ECF2}
+.appr{padding:16px 18px;border-left:3px solid var(--ap,#4C8DFF)}.appr .ah{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.appr p{margin:8px 0 12px;color:#C6CEDA;font-size:13.5px}.appr .ab{display:flex;gap:8px;flex-wrap:wrap}
+.apbtn{background:none;border:1px solid #242A35;color:#E8ECF2;border-radius:7px;padding:7px 14px;font:600 13px Inter,system-ui,sans-serif;cursor:pointer}.apbtn:hover{border-color:#3A4658}.apbtn.pr{background:#4C8DFF;border-color:#4C8DFF;color:#06101F}</style>
+<script>(function(){var go=function(k){parent.postMessage({veridex:k},'*')};
+var NAV={'Overview':'overview','Investigations':'ask','Data Sources':'sources','Evidence':'evidence','Decisions':'decision','History':'history','Settings':'settings'};
+var RULES=[{"r": "^Decisions$|^Prioritize North", "to": "decision"}, {"s": ".logo", "to": "overview"}];
+var B={pending:'<span class="badge b-pr">Pending review</span>',approved:'<span class="badge b-ok">Approved</span>',rejected:'<span class="badge b-neu">Rejected</span>'};
+window.VXS={approval:'pending',at:''};
+function paint(){var S=window.VXS,a=S.approval;
+document.querySelectorAll('[data-apbadge]').forEach(function(el){el.innerHTML=B[a]});
+document.querySelectorAll('[data-appr]').forEach(function(el){
+el.style.setProperty('--ap',a==='approved'?'#4CB782':a==='rejected'?'#8B95A5':'#4C8DFF');
+el.innerHTML=a==='pending'?'<div class="ah"><span class="cap">Human approval</span>'+B.pending+'</div><p><b>Prioritize North region</b><br>Review the evidence, then approve or reject. VERIDEX recommends; you decide.</p><div class="ab"><button class="apbtn" data-a="ev">Review evidence</button><button class="apbtn" data-a="rej">Reject</button><button class="apbtn pr" data-a="ok">Approve</button></div>'
+:'<div class="ah"><span class="cap">Human approval</span>'+B[a]+'</div><p><b>'+(a==='approved'?'Approved':'Rejected')+'</b> by Gagandeep · '+S.at+'<br>Recorded with 7 evidence items and a Stable robustness check.</p><div class="ab"><button class="apbtn" data-a="undo">Undo</button></div>'})}
+window.addEventListener('message',function(e){if(e.data&&e.data.vxState){window.VXS=e.data.vxState;paint();document.dispatchEvent(new Event('vxstate'))}});
+var AT='Sep 30, 14:31';
+document.addEventListener('click',function(e){var b=e.target.closest('.apbtn[data-a]');if(!b)return;var a=b.dataset.a;
+if(a==='ev'){if(typeof show==='function'&&document.getElementById('panel'))show('E-01');else go('evidence')}
+else parent.postMessage({vxSet:{approval:a==='ok'?'approved':a==='rej'?'rejected':'pending',at:AT}},'*')});
+document.addEventListener('click',function(e){
+if(e.target.closest('.apbtn'))return;
+var n=e.target.closest('.nav a');if(n){e.preventDefault();var k=NAV[n.textContent.trim()];if(k)go(k);return}
+for(var i=0;i<RULES.length;i++){var u=RULES[i],el=e.target.closest(u.s||'a,button');if(!el)continue;
+if(u.r&&!new RegExp(u.r).test((el.textContent||'').trim()))continue;
+e.preventDefault();e.stopPropagation();go(u.to);return}
+var a=e.target.closest('a');if(a&&a.getAttribute('href')==='#')e.preventDefault()},true);
+paint()})();</script></body></html>

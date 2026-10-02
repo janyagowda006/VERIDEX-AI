@@ -1,0 +1,364 @@
+/* ==========================================================================
+   VERIDEX Page 8: Robustness Analysis CSS
+   Authoritative Reference: veridex-prototype-v2.html (P["robustness"])
+   ========================================================================== */
+
+.robustness-page-container {
+  padding: 28px 36px 48px;
+  min-width: 0;
+  max-width: 1536px;
+  width: 100%;
+}
+
+.robustness-page-container .crumb {
+  color: var(--mu, #8B95A5);
+  font-size: 12.5px;
+  margin-bottom: 10px;
+}
+
+.robustness-page-container .crumb a {
+  color: var(--pr, #4C8DFF);
+  text-decoration: none;
+}
+
+.robustness-page-container .top {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+
+.robustness-page-container h1 {
+  margin: 0;
+  font-size: 24px;
+  letter-spacing: -.02em;
+  font-weight: 650;
+  color: var(--tx, #E8ECF2);
+}
+
+.robustness-page-container .sub {
+  margin: 2px 0 0;
+  color: var(--mu, #8B95A5);
+}
+
+.robustness-page-container .demo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--mu, #8B95A5);
+  font-size: 12px;
+}
+
+.robustness-page-container .seg {
+  display: flex;
+  border: 1px solid var(--line, #242A35);
+  border-radius: 7px;
+  overflow: hidden;
+}
+
+.robustness-page-container .seg button {
+  background: none;
+  border: 0;
+  color: var(--mu, #8B95A5);
+  padding: 5px 12px;
+  font: 500 12px var(--sans, Inter, sans-serif);
+  cursor: pointer;
+}
+
+.robustness-page-container .seg button.on {
+  background: var(--s2, #181C24);
+  color: var(--tx, #E8ECF2);
+}
+
+.robustness-page-container .card {
+  background: var(--s1, #11141A);
+  border: 1px solid var(--line, #242A35);
+  border-radius: 10px;
+}
+
+.robustness-page-container .cap {
+  font: 500 11px var(--mono, "JetBrains Mono", monospace);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--mu, #8B95A5);
+}
+
+.robustness-page-container .badge {
+  font: 500 10.5px var(--mono, "JetBrains Mono", monospace);
+  letter-spacing: .05em;
+  padding: 2px 7px;
+  border-radius: 4px;
+  border: 1px solid;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.robustness-page-container .b-ok {
+  color: var(--ok, #4CB782);
+  border-color: #2A5C44;
+  background: #4CB78214;
+}
+
+.robustness-page-container .b-warn {
+  color: var(--warn, #E0A94A);
+  border-color: #6E5526;
+  background: #E0A94A14;
+}
+
+.robustness-page-container .b-neu {
+  color: var(--neu, #8B95A5);
+  border-color: #3A424F;
+  background: #8B95A514;
+}
+
+.robustness-page-container .b-mu {
+  color: var(--mu, #8B95A5);
+  border-color: var(--line, #242A35);
+}
+
+.robustness-page-container .status {
+  padding: 20px 22px;
+  border-left: 3px solid var(--c);
+  margin-bottom: 18px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 24px;
+  align-items: center;
+}
+
+.robustness-page-container .status .st {
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -.02em;
+  color: var(--c);
+  margin: 6px 0 4px;
+}
+
+.robustness-page-container .status p {
+  margin: 0;
+  color: #C6CEDA;
+  max-width: 560px;
+}
+
+.robustness-page-container .cmp {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.robustness-page-container .cmp .box {
+  border: 1px solid var(--line, #242A35);
+  border-radius: 8px;
+  padding: 10px 14px;
+  background: var(--bg, #0A0C10);
+  min-width: 120px;
+}
+
+.robustness-page-container .cmp .box b {
+  display: block;
+  font-size: 16px;
+  margin-top: 2px;
+}
+
+.robustness-page-container .cmp .ar {
+  color: var(--mu, #8B95A5);
+  font-size: 18px;
+}
+
+.robustness-page-container .sec {
+  margin: 22px 0 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.robustness-page-container .scn {
+  margin-bottom: 14px;
+}
+
+.robustness-page-container .sh {
+  padding: 14px 16px;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.robustness-page-container .sh h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.robustness-page-container .sh p {
+  margin: 2px 0 0;
+  color: var(--mu, #8B95A5);
+  font-size: 12.5px;
+}
+
+.robustness-page-container .w {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.robustness-page-container .w span {
+  font: 11.5px var(--mono, "JetBrains Mono", monospace);
+  color: var(--mu, #8B95A5);
+  border: 1px solid var(--line, #242A35);
+  border-radius: 5px;
+  padding: 1px 7px;
+}
+
+.robustness-page-container .w span.ch {
+  color: var(--warn, #E0A94A);
+  border-color: #6E5526;
+}
+
+.robustness-page-container .scroll {
+  overflow-x: auto;
+}
+
+.robustness-page-container table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.robustness-page-container th {
+  font: 500 10.5px var(--mono, "JetBrains Mono", monospace);
+  letter-spacing: .08em;
+  color: var(--mu, #8B95A5);
+  text-align: left;
+  padding: 8px 16px;
+  border-top: 1px solid var(--line, #242A35);
+  border-bottom: 1px solid var(--line, #242A35);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.robustness-page-container td {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line, #242A35);
+  white-space: nowrap;
+}
+
+.robustness-page-container tr:last-child td {
+  border-bottom: 0;
+}
+
+.robustness-page-container th.r,
+.robustness-page-container td.r {
+  text-align: right;
+}
+
+.robustness-page-container td.m {
+  font-family: var(--mono, "JetBrains Mono", monospace);
+}
+
+.robustness-page-container tr.chg td {
+  background: #E0A94A0D;
+}
+
+.robustness-page-container .up {
+  color: var(--ok, #4CB782);
+}
+
+.robustness-page-container .dn {
+  color: var(--warn, #E0A94A);
+}
+
+.robustness-page-container .eq {
+  color: var(--mu, #8B95A5);
+}
+
+.robustness-page-container .mini {
+  display: inline-block;
+  height: 6px;
+  border-radius: 3px;
+  vertical-align: middle;
+  margin-right: 8px;
+}
+
+.robustness-page-container .grid2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.robustness-page-container .pad {
+  padding: 16px;
+}
+
+.robustness-page-container .pad h3 {
+  margin: 6px 0 6px;
+  font-size: 15px;
+}
+
+.robustness-page-container .pad p {
+  margin: 0;
+  color: var(--mu, #8B95A5);
+  font-size: 13px;
+}
+
+.robustness-page-container .kv {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 14px;
+  font: 12px var(--mono, "JetBrains Mono", monospace);
+  margin-top: 12px;
+}
+
+.robustness-page-container .kv span:nth-child(odd) {
+  color: var(--mu, #8B95A5);
+}
+
+.robustness-page-container .next {
+  border-left: 3px solid var(--c);
+  padding: 12px 16px;
+  background: var(--s1, #11141A);
+  border-radius: 0 10px 10px 0;
+  border-top: 1px solid var(--line, #242A35);
+  border-right: 1px solid var(--line, #242A35);
+  border-bottom: 1px solid var(--line, #242A35);
+  color: #C6CEDA;
+  margin-top: 14px;
+}
+
+.robustness-page-container .empty {
+  padding: 22px 16px;
+  color: var(--mu, #8B95A5);
+  border-top: 1px dashed var(--line, #242A35);
+  margin: 0 16px 16px;
+  border-radius: 8px;
+  border: 1px dashed var(--line, #242A35);
+}
+
+.robustness-page-container .note {
+  color: var(--mu, #8B95A5);
+  font-size: 11.5px;
+  margin-top: 20px;
+}
+
+.robustness-page-container .lm {
+  margin-top: 10px;
+  color: var(--mu, #8B95A5);
+  font: 12px var(--mono, "JetBrains Mono", monospace);
+}
+
+@media (max-width: 1180px) {
+  .robustness-page-container {
+    padding: 24px 20px;
+  }
+
+  .robustness-page-container .status {
+    grid-template-columns: 1fr;
+  }
+
+  .robustness-page-container .grid2 {
+    grid-template-columns: 1fr;
+  }
+}

@@ -530,3 +530,61 @@ export async function listAuditLogs(useMock = false, user_id = null, action_type
   }
   return await response.json();
 }
+
+
+/**
+ * Uploads dynamic CSV or Excel (.xlsx, .xls) data source to backend.
+ * Connects to POST /api/data-sources/upload
+ *
+ * @param {File} file - File object (CSV or Excel)
+ * @param {boolean} useMock - Whether to run mock
+ * @returns {Promise<Object>} DataSourceUploadResponse object from backend
+ */
+export async function uploadDataSource(file, useMock = false) {
+  if (!file) {
+    throw new Error("File is required for upload.");
+  }
+  if (useMock) {
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        const sanitizedName = file.name.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+        resolve({
+          message: `File '${file.name}' successfully processed and loaded into table uploaded_${sanitizedName}`,
+          table_name: `uploaded_${sanitizedName}`,
+          rows_inserted: 120,
+          column_count: 4,
+          columns: ["id", "category", "val", "date"]
+        });
+      }, 500);
+    });
+  }
+
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const token = getAuthToken();
+  const headers = {};
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const response = await fetch('/api/data-sources/upload', {
+    method: 'POST',
+    headers: headers,
+    body: formData
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    let detail = errorText;
+    try {
+      const jsonErr = JSON.parse(errorText);
+      if (jsonErr.detail) detail = typeof jsonErr.detail === 'string' ? jsonErr.detail : JSON.stringify(jsonErr.detail);
+    } catch {
+      // fallback
+    }
+    throw new Error(detail || "Failed to upload data source.");
+  }
+
+  return await response.json();
+}

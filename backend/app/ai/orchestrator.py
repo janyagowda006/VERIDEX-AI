@@ -1,6 +1,7 @@
 import json
 import re
 import math
+import logging
 from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
 from app.schemas.ai import AskResponse, ToolCallRecord
@@ -13,12 +14,18 @@ from app.services.evidence_calculations import EvidenceCalculator
 from app.services.decision_engine import DecisionEngine
 from app.services.robustness import RobustnessEngine
 from app.tools.sql_tool import execute_read_only_sql
+from app.tools.registry import ToolRegistry, ToolExecutionResult
+from app.services.claim_checker import verify_answer
+from app.schemas.decomposition import DecompositionResponse
+from app.schemas.campaign_impact import CampaignImpactResponse
 from app.ai.prompts import (
     SYSTEM_PROMPT_V3,
     format_schema_for_prompt,
     format_deterministic_reasoning_context
 )
 from app.ai.provider import BaseLLMProvider
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_SCENARIO_SHIFT_PCT: float = 10.0
 
@@ -319,8 +326,8 @@ def run_investigation_loop(
 ) -> AskResponse:
     """
     Custom bounded decision intelligence orchestration loop with Evidence Assembly, Decision Engine, and Robustness Testing.
-    Connects LLM reasoning to the safe read-only SQL tool and constructs deterministic decision intelligence payloads.
-    Supports bounded prior conversation turn context for multi-turn investigations.
+    Orchestrates typed specialized tools from ToolRegistry (sql_query, driver_decomposition, campaign_impact, claim_verification).
+    Supports multi-step reasoning turns and bounded prior conversation context.
     """
     if db is None:
         return AskResponse(
@@ -338,14 +345,9 @@ def run_investigation_loop(
     schema_context = get_database_schema(db)
     schema_text = format_schema_for_prompt(schema_context)
 
-    tool_definitions = [{
-        "name": "sql_query",
-        "description": "Executes a safe read-only SQL SELECT query against the business database.",
-        "parameters": {
-            "sql": "string (SQL SELECT statement)",
-            "max_rows": "integer (optional, default 100)"
-        }
-    }]
+    # Initialize Typed Tool Registry
+    registry = ToolRegistry()
+    tool_definitions = registry.get_tool_definitions()
 
     prior_context_block = _format_prior_turns_context(prior_turns) if prior_turns else ""
     if prior_context_block:
@@ -388,107 +390,112 @@ def run_investigation_loop(
 
         if response.has_tool_call and response.tool_call:
             tool_req = response.tool_call
-
-            if tool_req.tool_name != "sql_query":
-                err_msg = f"Unsupported tool requested by model: '{tool_req.tool_name}'"
-                return AskResponse(
-                    success=False,
-                    question=question,
-                    answer="",
-                    claims=[],
-                    evidence=evidence_items,
-                    analysis=None,
-                    tool_calls=tool_call_records,
-                    error=err_msg
-                )
-
-            # Extract arguments and validate for malformed inputs or duplicate calls
+            tool_name = tool_req.tool_name
             raw_args = tool_req.arguments if isinstance(tool_req.arguments, dict) else {}
-            sql_val = raw_args.get("sql")
-            max_r = raw_args.get("max_rows", 100) if isinstance(raw_args, dict) else 100
 
-            if not isinstance(sql_val, str) or not sql_val.strip():
-                sql_result = SQLQueryResult(
-                    success=False,
-                    sql=str(sql_val) if sql_val is not None else "",
-                    error_type="MALFORMED_ARGUMENT",
-                    error_message="Invalid tool argument: 'sql' must be a non-empty string."
-                )
-            else:
-                sql_str = sql_val.strip()
-                norm_sql = _normalize_sql(sql_str)
-
-                if norm_sql in executed_queries:
-                    sql_result = SQLQueryResult(
-                        success=False,
-                        sql=sql_str,
-                        error_type="DUPLICATE_QUERY",
-                        error_message="Duplicate SQL query detected; query was already executed in a previous turn."
-                    )
+            # Check for duplicate SQL queries when tool_name is sql_query
+            if tool_name == "sql_query":
+                sql_val = raw_args.get("sql")
+                if isinstance(sql_val, str) and sql_val.strip():
+                    norm_sql = _normalize_sql(sql_val.strip())
+                    if norm_sql in executed_queries:
+                        exec_res = ToolExecutionResult(
+                            success=False,
+                            tool_name="sql_query",
+                            error_type="DUPLICATE_QUERY",
+                            error_message="Duplicate SQL query detected; query was already executed in a previous turn."
+                        )
+                    else:
+                        executed_queries.add(norm_sql)
+                        exec_res = registry.execute_tool(
+                            tool_name=tool_name,
+                            db=db,
+                            arguments=raw_args,
+                            context_evidence=evidence_items
+                        )
                 else:
-                    executed_queries.add(norm_sql)
-                    sql_req = SQLQueryRequest(sql=sql_str, max_rows=max_r)
-                    sql_result = execute_read_only_sql(db, sql_req)
+                    exec_res = registry.execute_tool(
+                        tool_name=tool_name,
+                        db=db,
+                        arguments=raw_args,
+                        context_evidence=evidence_items
+                    )
+            else:
+                exec_res = registry.execute_tool(
+                    tool_name=tool_name,
+                    db=db,
+                    arguments=raw_args,
+                    context_evidence=evidence_items
+                )
+
+            # Build SQLQueryResult representation for ToolCallRecord
+            if isinstance(exec_res.raw_response, SQLQueryResult):
+                sql_result = exec_res.raw_response
+            else:
+                sql_result = SQLQueryResult(
+                    success=exec_res.success,
+                    sql=f"[{tool_name}] {json.dumps(raw_args)}",
+                    data=[exec_res.output_data] if exec_res.output_data else [],
+                    row_count=len(exec_res.evidence_items),
+                    error_type=exec_res.error_type,
+                    error_message=exec_res.error_message
+                )
 
             record = ToolCallRecord(
                 turn=turn,
-                tool_name="sql_query",
+                tool_name=tool_name,
                 arguments=raw_args,
                 result=sql_result
             )
             tool_call_records.append(record)
 
-            if sql_result.success and sql_result.data:
-                last_query_data = sql_result.data
+            # Aggregate evidence items produced by tool
+            if exec_res.evidence_items:
+                for ev in exec_res.evidence_items:
+                    if not any(existing.evidence_id == ev.evidence_id for existing in evidence_items):
+                        evidence_items.append(ev)
 
-            # Assemble FACT Evidence Item (only if query succeeded)
-            if sql_result.success:
-                fact_item = assembler.extract_fact_evidence(
-                    sql_result,
-                    description=f"Turn {turn} SQL query execution output."
-                )
-                if fact_item:
-                    evidence_items.append(fact_item)
+            # Extract structured query data for Decision and Robustness engine
+            if exec_res.success:
+                if tool_name == "sql_query" and sql_result.data:
+                    last_query_data = sql_result.data
+                elif tool_name == "driver_decomposition" and isinstance(exec_res.raw_response, DecompositionResponse):
+                    d_resp = exec_res.raw_response
+                    prim_breakdown = d_resp.breakdowns.get(d_resp.primary_dimension)
+                    if prim_breakdown and prim_breakdown.drivers:
+                        last_query_data = [
+                            {
+                                "candidate_id": dr.label,
+                                "metric": dr.delta_amount,
+                                "revenue_a": dr.revenue_a,
+                                "revenue_b": dr.revenue_b
+                            }
+                            for dr in prim_breakdown.drivers
+                        ]
+                elif tool_name == "campaign_impact" and isinstance(exec_res.raw_response, CampaignImpactResponse):
+                    c_resp = exec_res.raw_response
+                    last_query_data = [
+                        {"candidate_id": f"Exposed ({c_resp.target_region})", "metric": c_resp.exposed_change},
+                        {"candidate_id": f"Control ({c_resp.target_region})", "metric": c_resp.control_change}
+                    ]
 
-                    # If result has >= 2 numeric rows, compute derived comparison facts
-                    if sql_result.data and len(sql_result.data) >= 2:
-                        first_row = sql_result.data[0]
-                        second_row = sql_result.data[1]
-                        num_cols = [col for col, val in first_row.items() if isinstance(val, (int, float))]
-                        if num_cols:
-                            col_name = num_cols[0]
-                            v1 = float(first_row[col_name])
-                            v2 = float(second_row[col_name])
-                            label1 = str(first_row.get("region") or first_row.get("product_name") or f"Row 1 ({col_name})")
-                            label2 = str(second_row.get("region") or second_row.get("product_name") or f"Row 2 ({col_name})")
-
-                            derived_item = calculator.percentage_change(
-                                val_a=v1,
-                                val_b=v2,
-                                label_a=label1,
-                                label_b=label2,
-                                input_evidence_ids=[fact_item.evidence_id]
-                            )
-                            evidence_items.append(derived_item)
-
-            # Append tool result to messages history for model's next turn
+            # Build tool result text for conversation turn
             avail_ids = [ev.evidence_id for ev in evidence_items]
             tool_res_text = json.dumps({
-                "success": sql_result.success,
-                "row_count": sql_result.row_count,
-                "columns": sql_result.columns,
-                "data": sql_result.data,
+                "success": exec_res.success,
+                "tool_name": tool_name,
+                "output": exec_res.output_data,
                 "available_evidence_ids": avail_ids,
-                "error_type": sql_result.error_type,
-                "error_message": sql_result.error_message
+                "error_type": exec_res.error_type,
+                "error_message": exec_res.error_message
             }, default=str)
 
-            display_sql = raw_args.get("sql", "") if isinstance(raw_args, dict) else str(raw_args)
-            messages.append({"role": "model", "content": f"Requested tool 'sql_query' with SQL: {display_sql}"})
+            display_args = json.dumps(raw_args)
+            messages.append({"role": "model", "content": f"Requested tool '{tool_name}' with arguments: {display_args}"})
             messages.append({"role": "tool_result", "content": f"Tool Result for turn {turn}: {tool_res_text}"})
 
-            # Inject deterministic decision and multi-scenario robustness context for model's next turn
-            if sql_result.success and last_query_data:
+            # Inject reasoning context if query data is available
+            if exec_res.success and last_query_data:
                 inter_rob = _evaluate_orchestrated_robustness(
                     robustness_engine, evidence_items, last_query_data
                 )
@@ -507,7 +514,26 @@ def run_investigation_loop(
             claims, final_evidence = _build_claims_and_evidence(response.content, evidence_items)
             clean_answer = _clean_text_tags(response.content) if response.content else ""
 
-            # Run deterministic robustness assessment & decision engine
+            # Deterministic Claim Checker Integration
+            try:
+                verify_res = verify_answer(llm_text=response.content, evidence_list=final_evidence, tolerance=0.05)
+                if verify_res and verify_res.total_claims > 0:
+                    verified_sentences = {vc.sentence for vc in verify_res.verified}
+                    unverified_sentences = {vc.sentence for vc in verify_res.unverified}
+                    for cl in claims:
+                        if cl.claim_text in verified_sentences or any(vc.sentence in cl.claim_text for vc in verify_res.verified):
+                            cl.is_supported = True
+                            for vc in verify_res.verified:
+                                if vc.sentence in cl.claim_text or cl.claim_text in vc.sentence:
+                                    for m_id in vc.matching_evidence_ids:
+                                        if m_id not in cl.evidence_ids:
+                                            cl.evidence_ids.append(m_id)
+                        elif cl.claim_text in unverified_sentences and not cl.evidence_ids:
+                            cl.is_supported = False
+            except Exception as v_err:
+                logger.warning("Claim verification integration error: %s", v_err)
+
+            # Deterministic Robustness and Decision Analysis
             robustness_check = _evaluate_orchestrated_robustness(
                 robustness_engine=robustness_engine,
                 evidence_items=final_evidence,
@@ -543,11 +569,26 @@ def run_investigation_loop(
     if tool_call_records:
         last_rec = tool_call_records[-1]
         if last_rec.result.success:
-            final_summary += f" Executed {len(tool_call_records)} tool query(ies). Last query returned {last_rec.result.row_count} records."
+            final_summary += f" Executed {len(tool_call_records)} tool query(ies)."
         else:
             final_summary += f" Last tool call failed: {last_rec.result.error_message}"
 
     claims, final_evidence = _build_claims_and_evidence(final_summary, evidence_items)
+
+    # Deterministic Claim Checker Integration for turn boundary summary
+    try:
+        verify_res = verify_answer(llm_text=final_summary, evidence_list=final_evidence, tolerance=0.05)
+        if verify_res and verify_res.total_claims > 0:
+            verified_sentences = {vc.sentence for vc in verify_res.verified}
+            unverified_sentences = {vc.sentence for vc in verify_res.unverified}
+            for cl in claims:
+                if cl.claim_text in verified_sentences or any(vc.sentence in cl.claim_text for vc in verify_res.verified):
+                    cl.is_supported = True
+                elif cl.claim_text in unverified_sentences or any(vc.sentence in cl.claim_text for vc in verify_res.unverified):
+                    cl.is_supported = False
+    except Exception as v_err:
+        logger.warning("Claim verification integration error: %s", v_err)
+
     robustness_check = _evaluate_orchestrated_robustness(
         robustness_engine=robustness_engine,
         evidence_items=final_evidence,

@@ -107,10 +107,11 @@ def is_percent_semantic(name: str, formula: str = "", desc: str = "") -> bool:
     fl = formula.lower()
     dl = desc.lower()
     return (
-        any(w in nl for w in ("percent", "pct", "share", "rate"))
+        any(w in nl for w in ("percent", "pct", "share", "rate", "margin"))
         or "* 100" in fl
         or "%" in dl
     )
+
 
 
 def is_currency_semantic(name: str) -> bool:

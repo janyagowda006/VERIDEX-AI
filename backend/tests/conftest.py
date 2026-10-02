@@ -5,6 +5,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 from app.models.business_data import Base
 from app.services.data_ingestion import ingest_csv_to_db
+from app.api.deps import seed_default_users_if_needed
 from scripts.generate_data import generate_synthetic_data
 
 
@@ -30,6 +31,8 @@ def test_db_session():
     Base.metadata.create_all(bind=engine)
     TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     session = TestingSessionLocal()
+
+    seed_default_users_if_needed(session)
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         generate_synthetic_data(seed=42, output_dir=tmp_dir)

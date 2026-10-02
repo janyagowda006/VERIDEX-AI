@@ -163,6 +163,8 @@ class InvestigationService:
         existing_inv = None
         if not _is_mock_session(session):
             try:
+                from app.api.deps import seed_default_users_if_needed
+                seed_default_users_if_needed(session)
                 existing_inv = session.query(Investigation).filter(Investigation.investigation_id == target_inv_id).first()
             except Exception:
                 try:

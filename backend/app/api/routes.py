@@ -309,6 +309,7 @@ def verify_llm_answer(
 @router.post("/api/ask", response_model=AskResponse)
 def ask_business_question(
     request: AskRequest,
+    req: Request = None,
     db: Session = Depends(get_db),
     provider: BaseLLMProvider = Depends(get_llm_provider),
     current_user: User = Depends(require_roles("ANALYST", "ADMIN"))
@@ -358,7 +359,14 @@ def ask_business_question(
                 pass
             service = InvestigationService(db)
 
-            owner_id = current_user.user_id if current_user else None
+            has_auth = bool(
+                req and (
+                    req.headers.get("Authorization") or
+                    req.headers.get("X-Veridex-Mock-User-Id") or
+                    req.headers.get("X-Veridex-Mock-Role")
+                )
+            )
+            owner_id = (current_user.user_id if (current_user and has_auth) else None) or "usr_analyst_01"
             inv = service.create_investigation(
                 db=db,
                 question=request.question,
@@ -532,13 +540,13 @@ def review_investigation(
     if st_str not in ("APPROVED", "REJECTED", "FLAGGED"):
         raise HTTPException(status_code=400, detail=f"Invalid review decision '{st_str}'. Allowed decisions are APPROVED, REJECTED, FLAGGED.")
 
-    reviewer_user_id = (current_user.user_id if (current_user and has_auth_headers) else None) or review_req.reviewer_id or "reviewer_user"
+    reviewer_user_id = (current_user.user_id if (current_user and has_auth_headers) else None) or review_req.reviewer_id or "usr_reviewer_01"
 
     inv_rec = InvestigationService.get_investigation_by_id(db=db, investigation_id=investigation_id)
     if not inv_rec:
         raise HTTPException(status_code=404, detail=f"Investigation '{investigation_id}' not found.")
 
-    if inv_rec.owner_id and inv_rec.owner_id == reviewer_user_id and has_auth_headers:
+    if inv_rec.owner_id and inv_rec.owner_id == reviewer_user_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Self-Review Blocked: You cannot review an investigation you initiated."

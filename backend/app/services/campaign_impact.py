@@ -109,12 +109,8 @@ def campaign_impact(
     """
     start_time = time.perf_counter()
 
-    # Enforce read-only transaction on PostgreSQL
-    if db.bind and db.bind.dialect.name == "postgresql":
-        db.execute(text("SET TRANSACTION READ ONLY"))
-        db.execute(text("SET statement_timeout = 3000"))
-
     campaign = custom_definition or get_campaign(campaign_id)
+
     calc = EvidenceCalculator()
 
     exp_start, exp_end = campaign.exposure_window

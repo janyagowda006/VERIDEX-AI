@@ -26,6 +26,7 @@ class Investigation(Base):
     robustness_status = Column(String(32), nullable=True, index=True)
     review_status = Column(String(32), nullable=False, default="PENDING", index=True)
     created_at = Column(DateTime(timezone=True), nullable=False, index=True, default=utcnow)
+
     completed_at = Column(DateTime(timezone=True), nullable=True)
     execution_time_ms = Column(Float, nullable=True)
     turns_used = Column(Integer, nullable=True, default=0)
@@ -34,7 +35,6 @@ class Investigation(Base):
     claims_count = Column(Integer, nullable=True, default=0)
     result_json = Column(Text, nullable=True)
     error_message = Column(Text, nullable=True)
-
     owner_id = Column(String(36), ForeignKey("users.user_id"), nullable=True, index=True)
     answer = Column(Text, nullable=True)
 
@@ -54,6 +54,9 @@ class Investigation(Base):
         cascade="all, delete-orphan",
         order_by="InvestigationAuditLog.created_at.desc()"
     )
+
+
+
 
 
 class InvestigationReview(Base):

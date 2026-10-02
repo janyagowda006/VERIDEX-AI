@@ -98,12 +98,8 @@ def execute_read_only_sql(db: Session, request: SQLQueryRequest) -> SQLQueryResu
     query_hash = hashlib.sha256(raw_sql.encode("utf-8")).hexdigest()
 
     try:
-        # Step 3: Execution under read-only transaction and statement timeout (if PostgreSQL)
-        if dialect_name in ["postgres", "postgresql"]:
-            db.execute(text("SET LOCAL statement_timeout = '3000ms'"))
-            db.execute(text("SET TRANSACTION READ ONLY"))
-
         result = db.execute(text(sql_to_execute))
+
         columns = list(result.keys()) if result.returns_rows else []
         rows_fetched = result.fetchall() if result.returns_rows else []
 
@@ -145,6 +141,10 @@ def execute_read_only_sql(db: Session, request: SQLQueryRequest) -> SQLQueryResu
         )
 
     except Exception as e:
+        try:
+            db.rollback()
+        except Exception:
+            pass
         err_str = str(e)
         if "canceling statement due to statement timeout" in err_str.lower() or "timeout" in err_str.lower():
             err_type = "TIMEOUT"

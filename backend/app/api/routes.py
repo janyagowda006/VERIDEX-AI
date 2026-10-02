@@ -352,7 +352,12 @@ def ask_business_question(
 
         # Safely attempt DB persistence
         try:
+            try:
+                db.rollback()
+            except Exception:
+                pass
             service = InvestigationService(db)
+
             owner_id = current_user.user_id if current_user else None
             inv = service.create_investigation(
                 db=db,

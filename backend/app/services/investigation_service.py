@@ -165,7 +165,11 @@ class InvestigationService:
             try:
                 existing_inv = session.query(Investigation).filter(Investigation.investigation_id == target_inv_id).first()
             except Exception:
-                pass
+                try:
+                    session.rollback()
+                except Exception:
+                    pass
+
 
         if resp is not None:
             if not isinstance(resp, AskResponse):
@@ -208,10 +212,6 @@ class InvestigationService:
                 investigation.tool_calls_count = len(resp.tool_calls) if resp.tool_calls else 0
                 investigation.evidence_count = len(resp.evidence) if resp.evidence else 0
                 investigation.claims_count = len(resp.claims) if resp.claims else 0
-                investigation.result_json = result_json_str
-                investigation.error_message = err_msg
-                if owner_id and not investigation.owner_id:
-                    investigation.owner_id = owner_id
                 investigation.answer = resp.answer
                 investigation.claims_json = claims_json
                 investigation.evidence_json = evidence_json
@@ -243,19 +243,17 @@ class InvestigationService:
                 )
                 session.add(investigation)
 
+
+
             initial_audit = InvestigationAuditLog(
                 audit_id=f"audit_{uuid.uuid4().hex[:28]}",
                 investigation_id=target_inv_id,
                 event_type="INVESTIGATION_COMPLETED" if resp.success else "INVESTIGATION_FAILED",
                 review_status=ReviewStatus.PENDING.value,
                 reviewer_notes=None,
-                created_at=now,
-                event_metadata_json={
-                    "success": resp.success,
-                    "tool_calls_count": len(resp.tool_calls) if resp.tool_calls else 0,
-                    "robustness_status": robustness_status
-                }
+                created_at=now
             )
+
 
             try:
                 session.add(initial_audit)
@@ -275,10 +273,10 @@ class InvestigationService:
                 investigation_id=target_inv_id,
                 question=clean_question,
                 status=InvestigationStatus.IN_PROGRESS.value,
-                review_status=ReviewStatus.PENDING.value,
                 created_at=now,
                 owner_id=owner_id
             )
+
 
             try:
                 session.add(investigation)
@@ -454,20 +452,22 @@ class InvestigationService:
         Converts an Investigation model to a lightweight InvestigationSummary schema.
         """
         top_finding = None
-        if investigation.analysis_json and isinstance(investigation.analysis_json, dict):
-            rec = investigation.analysis_json.get("recommendation")
+        analysis_json = getattr(investigation, "analysis_json", None)
+        if analysis_json and isinstance(analysis_json, dict):
+            rec = analysis_json.get("recommendation")
             if rec and isinstance(rec, dict):
                 top_finding = rec.get("action_title")
         elif investigation.result_json:
             try:
-                data = json.loads(investigation.result_json)
-                if data.get("analysis") and data["analysis"].get("recommendation"):
+                data = json.loads(investigation.result_json) if isinstance(investigation.result_json, str) else investigation.result_json
+                if isinstance(data, dict) and data.get("analysis") and data["analysis"].get("recommendation"):
                     top_finding = data["analysis"]["recommendation"].get("action_title")
             except Exception:
                 pass
 
         created_val = investigation.created_at
         completed_val = investigation.completed_at
+        rev_status = getattr(investigation, "review_status", "PENDING")
 
         return InvestigationSummary(
             investigation_id=investigation.investigation_id,
@@ -476,7 +476,7 @@ class InvestigationService:
             completed_at=completed_val,
             status=investigation.status,
             robustness_status=investigation.robustness_status,
-            review_status=investigation.review_status,
+            review_status=rev_status,
             top_finding=top_finding,
             execution_time_ms=investigation.execution_time_ms,
             turns_used=investigation.turns_used or 0,
@@ -485,6 +485,7 @@ class InvestigationService:
             claims_count=investigation.claims_count or 0,
             owner_id=investigation.owner_id
         )
+
 
     def get_investigation_detail(self, investigation_id: str, db: Optional[Session] = None) -> Optional[InvestigationDetailResponse]:
         """
@@ -533,8 +534,9 @@ class InvestigationService:
             question=inv.question,
             status=inv.status,
             robustness_status=inv.robustness_status,
-            review_status=inv.review_status,
+            review_status=latest_rev.review_status if latest_rev else "PENDING",
             created_at=inv.created_at,
+
             completed_at=inv.completed_at,
             response=ask_resp,
             reviewer_notes=latest_notes,
@@ -656,6 +658,8 @@ class InvestigationService:
         inv.review_status = decision_val
 
         review_rec = InvestigationReview(
+
+
             review_id=self.generate_review_id(),
             investigation_id=investigation_id,
             review_status=decision_val,

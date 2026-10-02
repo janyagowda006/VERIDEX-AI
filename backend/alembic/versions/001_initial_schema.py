@@ -109,14 +109,23 @@ def upgrade() -> None:
         sa.Column('evidence_count', sa.Integer(), nullable=True, server_default='0'),
         sa.Column('claims_count', sa.Integer(), nullable=True, server_default='0'),
         sa.Column('robustness_status', sa.String(length=32), nullable=True),
+        sa.Column('review_status', sa.String(length=32), nullable=True, server_default='PENDING'),
         sa.Column('result_json', sa.Text(), nullable=True),
         sa.Column('error_message', sa.Text(), nullable=True),
         sa.Column('owner_id', sa.String(length=36), nullable=True),
+        sa.Column('answer', sa.Text(), nullable=True),
+        sa.Column('claims_json', sa.JSON(), nullable=True),
+        sa.Column('evidence_json', sa.JSON(), nullable=True),
+        sa.Column('analysis_json', sa.JSON(), nullable=True),
+        sa.Column('tool_calls_json', sa.JSON(), nullable=True),
+        sa.Column('metadata_json', sa.JSON(), nullable=True),
         sa.ForeignKeyConstraint(['owner_id'], ['users.user_id'], ),
         sa.PrimaryKeyConstraint('investigation_id')
     )
     op.create_index(op.f('ix_investigations_investigation_id'), 'investigations', ['investigation_id'], unique=False)
     op.create_index(op.f('ix_investigations_status'), 'investigations', ['status'], unique=False)
+    op.create_index(op.f('ix_investigations_review_status'), 'investigations', ['review_status'], unique=False)
+
     op.create_index(op.f('ix_investigations_created_at'), 'investigations', ['created_at'], unique=False)
     op.create_index(op.f('ix_investigations_robustness_status'), 'investigations', ['robustness_status'], unique=False)
     op.create_index(op.f('ix_investigations_owner_id'), 'investigations', ['owner_id'], unique=False)

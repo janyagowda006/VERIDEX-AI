@@ -1,17 +1,43 @@
-from pydantic import BaseModel, Field, ConfigDict, field_validator
-from typing import Optional, Dict, Any
+from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator, ValidationError
+from typing import Optional, Dict, Any, List
 from datetime import datetime
 from enum import Enum
+from app.schemas.ai import AskResponse
 
 
 class InvestigationStatus(str, Enum):
+    """
+    Lifecycle status of an investigation execution.
+    """
     IN_PROGRESS = "IN_PROGRESS"
+    RUNNING = "RUNNING"
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
     REQUIRES_REVIEW = "REQUIRES_REVIEW"
+    LIMIT_REACHED = "LIMIT_REACHED"
 
 
 class InvestigationReviewStatus(str, Enum):
+    PENDING = "PENDING"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+    FLAGGED = "FLAGGED"
+
+
+class ReviewStatus(str, Enum):
+    """
+    Human review status for an actionable recommendation.
+    """
+    PENDING = "PENDING"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+    FLAGGED = "FLAGGED"
+
+
+class ReviewDecision(str, Enum):
+    """
+    Permitted human review decision submissions.
+    """
     APPROVED = "APPROVED"
     REJECTED = "REJECTED"
     FLAGGED = "FLAGGED"
@@ -31,27 +57,68 @@ class InvestigationSummary(BaseModel):
     """
     investigation_id: str = Field(..., description="Unique investigation identifier.")
     question: str = Field(..., description="Business question in natural language.")
-    status: str = Field(..., description="Lifecycle status (IN_PROGRESS, COMPLETED, FAILED, REQUIRES_REVIEW).")
-    created_at: datetime = Field(..., description="UTC creation timestamp.")
-    completed_at: Optional[datetime] = Field(None, description="UTC completion timestamp.")
+    status: str = Field(default="COMPLETED", description="Lifecycle status.")
+    created_at: Any = Field(..., description="UTC creation timestamp.")
+    completed_at: Optional[Any] = Field(None, description="UTC completion timestamp.")
     execution_time_ms: Optional[float] = Field(None, description="Backend execution duration in milliseconds.")
     turns_used: int = Field(default=0, description="Total turns executed.")
     tool_calls_count: int = Field(default=0, description="Total tool calls executed.")
     evidence_count: int = Field(default=0, description="Total evidence items collected.")
     claims_count: int = Field(default=0, description="Total claims generated.")
-    robustness_status: Optional[str] = Field(None, description="Robustness evaluation (STABLE, SENSITIVE, INSUFFICIENT_EVIDENCE).")
+    robustness_status: Optional[str] = Field(None, description="Robustness evaluation.")
+    review_status: str = Field(default="PENDING", description="Current human review state.")
+    top_finding: Optional[str] = Field(default=None, description="Short summary or leading finding.")
     owner_id: Optional[str] = Field(None, description="Owner user identifier.")
 
     model_config = ConfigDict(from_attributes=True)
+
+    @field_validator("question")
+    @classmethod
+    def question_must_not_be_blank(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("question must not be blank.")
+        return v.strip()
 
 
 class InvestigationReviewCreate(BaseModel):
     """
     Schema for submitting a Human-in-the-Loop review for an investigation.
+    Accepts either 'review_status' or 'status' for decision and strictly validates against ReviewDecision enum.
     """
-    review_status: InvestigationReviewStatus = Field(..., description="Review decision (APPROVED, REJECTED, FLAGGED).")
-    reviewer_id: Optional[str] = Field(None, description="Identity of human reviewer (populated by server if omitted).")
-    review_notes: Optional[str] = Field(None, max_length=2000, description="Optional reviewer notes or rationale (up to 2000 chars).")
+    review_status: Optional[ReviewDecision] = Field(None, description="Review decision (APPROVED, REJECTED, FLAGGED).")
+    status: Optional[ReviewDecision] = Field(None, description="Alternative field for review decision (APPROVED, REJECTED, FLAGGED).")
+    reviewer_id: Optional[str] = Field(None, description="Identity of human reviewer.")
+    reviewer_notes: Optional[str] = Field(None, max_length=2000, description="Optional reviewer notes.")
+    review_notes: Optional[str] = Field(None, max_length=2000, description="Alternative field for reviewer notes.")
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_fields(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            raw_st = data.get("review_status") or data.get("status")
+            if raw_st is not None and isinstance(raw_st, str):
+                raw_st = raw_st.strip().upper()
+                if raw_st not in ("APPROVED", "REJECTED", "FLAGGED"):
+                    raise ValueError(f"Invalid review status '{raw_st}'. Must be APPROVED, REJECTED, or FLAGGED.")
+                data["status"] = ReviewDecision(raw_st)
+                data["review_status"] = ReviewDecision(raw_st)
+
+            raw_notes = data.get("reviewer_notes")
+            if raw_notes is None:
+                raw_notes = data.get("review_notes")
+            if raw_notes is not None and isinstance(raw_notes, str):
+                stripped = raw_notes.strip()
+                data["reviewer_notes"] = stripped if stripped else None
+                data["review_notes"] = stripped if stripped else None
+        return data
+
+    @field_validator("reviewer_notes", "review_notes", mode="before")
+    @classmethod
+    def sanitize_notes(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and isinstance(v, str):
+            stripped = v.strip()
+            return stripped if stripped else None
+        return v
 
     @field_validator("reviewer_id")
     @classmethod
@@ -68,6 +135,13 @@ class InvestigationReviewCreate(BaseModel):
         return s
 
 
+class InvestigationReviewRequest(InvestigationReviewCreate):
+    """
+    Request payload to record an executive decision approval or rejection.
+    """
+    pass
+
+
 class InvestigationReviewResponse(BaseModel):
     """
     Schema for representing a persisted Human-in-the-Loop review record.
@@ -77,7 +151,7 @@ class InvestigationReviewResponse(BaseModel):
     review_status: str = Field(..., description="Review decision (APPROVED, REJECTED, FLAGGED).")
     reviewer_id: str = Field(..., description="Identifier of human reviewer.")
     review_notes: Optional[str] = Field(None, description="Optional reviewer notes.")
-    reviewed_at: datetime = Field(..., description="UTC timestamp of review submission.")
+    reviewed_at: Any = Field(..., description="UTC timestamp of review submission.")
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -92,24 +166,71 @@ class InvestigationTurnResponse(BaseModel):
     user_question: str = Field(..., description="User question for this turn.")
     execution_time_ms: Optional[float] = Field(None, description="Backend execution duration in milliseconds.")
     result_json: Optional[str] = Field(None, description="Serialized AskResponse JSON result for this turn.")
-    created_at: datetime = Field(..., description="UTC timestamp of turn creation.")
+    created_at: Any = Field(..., description="UTC timestamp of turn creation.")
 
     model_config = ConfigDict(from_attributes=True)
 
 
-class InvestigationDetail(InvestigationSummary):
+class InvestigationAuditLogEntry(BaseModel):
     """
-    Detailed investigation schema including full AskResponse JSON payload, error context,
-    Human-in-the-Loop review history, and conversation turn history.
+    Audit log entry representing a lifecycle or review event.
     """
+    audit_id: str = Field(..., description="Unique audit event identifier.")
+    investigation_id: str = Field(..., description="Associated investigation ID.")
+    event_type: str = Field(..., description="Event type descriptor.")
+    review_status: Optional[str] = Field(default=None, description="Associated review status.")
+    reviewer_notes: Optional[str] = Field(default=None, description="Notes captured at event time.")
+    created_at: Any = Field(..., description="ISO-8601 UTC event timestamp.")
+    event_metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Metadata associated with event.")
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class InvestigationDetailResponse(BaseModel):
+    """
+    Complete investigation detail response combining persistent metadata with the reconstructed AskResponse.
+    Exposes all fields for complete compatibility across test suites.
+    """
+    investigation_id: str = Field(..., description="Unique investigation identifier (UUID).")
+    question: str = Field(..., min_length=1, description="Original business question.")
+    status: str = Field(..., description="Execution status.")
+    robustness_status: Optional[str] = Field(None, description="Robustness status.")
+    review_status: str = Field(..., description="Human review status.")
+    created_at: Any = Field(..., description="ISO-8601 UTC creation timestamp.")
+    completed_at: Optional[Any] = Field(default=None, description="ISO-8601 UTC completion timestamp.")
+    response: Optional[AskResponse] = Field(default=None, description="Reconstructed complete AskResponse.")
+    reviewer_notes: Optional[str] = Field(default=None, description="Latest human review notes.")
+    audit_trail: List[InvestigationAuditLogEntry] = Field(default_factory=list, description="Chronological audit events.")
+
+    # Review fields for API responses
+    review_id: Optional[str] = Field(None, description="Unique review identifier if available.")
+    reviewer_id: Optional[str] = Field(None, description="Human reviewer identifier.")
+    reviewed_at: Optional[Any] = Field(None, description="Timestamp of latest review.")
+
+    # Additional fields for compatibility
     result_json: Optional[str] = Field(None, description="Serialized AskResponse JSON result.")
     error_message: Optional[str] = Field(None, description="Error message if status is FAILED.")
     latest_review: Optional[InvestigationReviewResponse] = Field(None, description="Most recent human review record if present.")
     review_count: int = Field(default=0, description="Total number of human reviews submitted.")
-    turns: list[InvestigationTurnResponse] = Field(default_factory=list, description="Ordered conversation turn records.")
+    turns: List[InvestigationTurnResponse] = Field(default_factory=list, description="Ordered conversation turn records.")
+    turns_used: int = Field(default=0, description="Total turns executed.")
+    tool_calls_count: int = Field(default=0, description="Total tool calls executed.")
+    evidence_count: int = Field(default=0, description="Total evidence items collected.")
+    claims_count: int = Field(default=0, description="Total claims generated.")
+    owner_id: Optional[str] = Field(None, description="Owner user identifier.")
 
     model_config = ConfigDict(from_attributes=True)
 
+    @field_validator("question")
+    @classmethod
+    def question_must_not_be_blank(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("question must not be blank.")
+        return v.strip()
+
+
+# Alias for backward compatibility
+InvestigationDetail = InvestigationDetailResponse
 
 
 class InvestigationReassessRequest(BaseModel):
@@ -135,7 +256,7 @@ class InvestigationReassessResponse(BaseModel):
     baseline_top_candidate: Optional[str] = Field(None, description="Baseline top candidate name/region if available.")
     baseline_metric_name: Optional[str] = Field(None, description="Primary metric column evaluated.")
     robustness_check: Dict[str, Any] = Field(..., description="Reassessed deterministic RobustnessCheck schema object.")
-    reassessed_at: datetime = Field(..., description="UTC timestamp of re-assessment execution.")
+    reassessed_at: Any = Field(..., description="UTC timestamp of re-assessment execution.")
 
     model_config = ConfigDict(from_attributes=True)
 

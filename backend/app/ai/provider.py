@@ -72,25 +72,19 @@ class GeminiProvider(BaseLLMProvider):
 
             client = genai.Client(api_key=self.api_key)
 
-            # Convert tools to official Gemini function declaration format
-            gemini_tools = [
-                types.Tool(
-                    function_declarations=[
-                        types.FunctionDeclaration(
-                            name="sql_query",
-                            description="Executes a safe read-only SQL SELECT query against the PostgreSQL business database.",
-                            parameters=types.Schema(
-                                type="OBJECT",
-                                properties={
-                                    "sql": types.Schema(type="STRING", description="The SQL SELECT query to execute."),
-                                    "max_rows": types.Schema(type="INTEGER", description="Maximum rows to return (default 100).")
-                                },
-                                required=["sql"]
-                            )
-                        )
-                    ]
+            # Convert tool definitions to official Gemini FunctionDeclarations
+            declarations = []
+            for tool_def in tools:
+                t_name = tool_def.get("name", "sql_query")
+                t_desc = tool_def.get("description", "")
+                declarations.append(
+                    types.FunctionDeclaration(
+                        name=t_name,
+                        description=t_desc
+                    )
                 )
-            ]
+
+            gemini_tools = [types.Tool(function_declarations=declarations)] if declarations else None
 
             # Build native SDK conversation turns
             sdk_contents = []
@@ -150,6 +144,7 @@ class GeminiProvider(BaseLLMProvider):
 class MockLLMProvider(BaseLLMProvider):
     """
     Deterministic mock provider for automated unit testing without network calls or API keys.
+    Supports tool execution simulation for all tools in ToolRegistry.
     """
 
     def __init__(self, custom_responses: Optional[List[ModelResponse]] = None):
@@ -168,30 +163,101 @@ class MockLLMProvider(BaseLLMProvider):
             idx = min(self.call_count - 1, len(self.custom_responses) - 1)
             return self.custom_responses[idx]
 
-        # Default deterministic mock sequence based on user question
+        # Extract initial user question and full message text
+        first_user_message = messages[0]["content"] if messages else ""
         last_message = messages[-1]["content"] if messages else ""
+        all_text = " ".join(m.get("content", "") for m in messages).lower()
 
-        # Turn 1: Emit sql_query tool call
-        if self.call_count == 1:
-            if "revenue" in last_message.lower() and "region" in last_message.lower():
-                sql = "SELECT c.region, SUM(oi.quantity * oi.unit_price) AS gross_revenue FROM orders o JOIN customers c ON o.customer_id = c.customer_id JOIN order_items oi ON o.order_id = oi.order_id WHERE o.order_status = 'Completed' GROUP BY c.region ORDER BY gross_revenue DESC"
-            elif "top" in last_message.lower() and "product" in last_message.lower():
-                sql = "SELECT p.product_name, SUM(oi.quantity * oi.unit_price) AS total_revenue FROM order_items oi JOIN products p ON oi.product_id = p.product_id GROUP BY p.product_name ORDER BY total_revenue DESC LIMIT 5"
-            else:
-                sql = "SELECT c.region, COUNT(o.order_id) AS total_orders FROM orders o JOIN customers c ON o.customer_id = c.customer_id GROUP BY c.region"
-
-            return ModelResponse(
-                has_tool_call=True,
-                tool_call=ToolCallRequest(
-                    tool_name="sql_query",
-                    arguments={"sql": sql, "max_rows": 50}
+        # Multi-tool sequence detection: "Revenue fell last month. Why, and did the campaign help?"
+        if ("why" in first_user_message.lower() or "declin" in first_user_message.lower()) and ("campaign" in first_user_message.lower() or "did" in first_user_message.lower()):
+            if self.call_count == 1:
+                return ModelResponse(
+                    has_tool_call=True,
+                    tool_call=ToolCallRequest(
+                        tool_name="driver_decomposition",
+                        arguments={
+                            "metric": "revenue",
+                            "period_a": {"start_date": "2025-01-01", "end_date": "2025-03-31"},
+                            "period_b": {"start_date": "2025-04-01", "end_date": "2025-06-30"},
+                            "dimensions": ["region", "category"]
+                        }
+                    )
                 )
-            )
+            elif self.call_count == 2:
+                return ModelResponse(
+                    has_tool_call=True,
+                    tool_call=ToolCallRequest(
+                        tool_name="campaign_impact",
+                        arguments={
+                            "campaign_id": "CMP-2025-Q3-SOUTH",
+                            "min_sample_size": 15
+                        }
+                    )
+                )
+            else:
+                return ModelResponse(
+                    has_tool_call=False,
+                    content="Driver decomposition indicates that revenue in South region declined. Campaign impact analysis shows Difference-in-Differences lift of 1929.41."
+                )
 
-        # Turn 2: Synthesize final answer from query results
+        # Single-tool selection in Turn 1
+        if self.call_count == 1:
+            lower_msg = first_user_message.lower()
+            if any(w in lower_msg for w in ("declin", "driver", "decompose", "variance", "why did revenue")):
+                return ModelResponse(
+                    has_tool_call=True,
+                    tool_call=ToolCallRequest(
+                        tool_name="driver_decomposition",
+                        arguments={
+                            "metric": "revenue",
+                            "period_a": {"start_date": "2025-01-01", "end_date": "2025-03-31"},
+                            "period_b": {"start_date": "2025-04-01", "end_date": "2025-06-30"},
+                            "dimensions": ["region", "category"]
+                        }
+                    )
+                )
+            elif any(w in lower_msg for w in ("campaign", "impact", "lift")):
+                return ModelResponse(
+                    has_tool_call=True,
+                    tool_call=ToolCallRequest(
+                        tool_name="campaign_impact",
+                        arguments={
+                            "campaign_id": "CMP-2025-Q3-SOUTH",
+                            "min_sample_size": 15
+                        }
+                    )
+                )
+            elif any(w in lower_msg for w in ("verify", "claim", "statement")):
+                return ModelResponse(
+                    has_tool_call=True,
+                    tool_call=ToolCallRequest(
+                        tool_name="claim_verification",
+                        arguments={
+                            "llm_text": "Q3 revenue in South region was 125000 across 31 customers.",
+                            "tolerance": 0.05
+                        }
+                    )
+                )
+            else:
+                if "revenue" in lower_msg and "region" in lower_msg:
+                    sql = "SELECT c.region, SUM(oi.quantity * oi.unit_price) AS gross_revenue FROM orders o JOIN customers c ON o.customer_id = c.customer_id JOIN order_items oi ON o.order_id = oi.order_id WHERE o.order_status = 'Completed' GROUP BY c.region ORDER BY gross_revenue DESC"
+                elif "top" in lower_msg and "product" in lower_msg:
+                    sql = "SELECT p.product_name, SUM(oi.quantity * oi.unit_price) AS total_revenue FROM order_items oi JOIN products p ON oi.product_id = p.product_id GROUP BY p.product_name ORDER BY total_revenue DESC LIMIT 5"
+                else:
+                    sql = "SELECT c.region, COUNT(o.order_id) AS total_orders FROM orders o JOIN customers c ON o.customer_id = c.customer_id GROUP BY c.region"
+
+                return ModelResponse(
+                    has_tool_call=True,
+                    tool_call=ToolCallRequest(
+                        tool_name="sql_query",
+                        arguments={"sql": sql, "max_rows": 50}
+                    )
+                )
+
+        # Turn 2 / final answer
         return ModelResponse(
             has_tool_call=False,
-            content=f"Based on verified database evidence from the SQL tool execution, the query completed successfully."
+            content="Based on verified database evidence from tool execution, the query completed successfully."
         )
 
 

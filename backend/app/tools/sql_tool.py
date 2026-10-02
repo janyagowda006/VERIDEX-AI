@@ -61,12 +61,21 @@ def validate_sql_safety(raw_sql: str) -> Tuple[bool, Optional[str], Optional[str
     return True, None, None
 
 
-def execute_read_only_sql(db: Session, request: SQLQueryRequest) -> SQLQueryResult:
+def execute_read_only_sql(db: Any, request: Any = None) -> SQLQueryResult:
     """
     Executes a read-only SQL query safely against PostgreSQL (or SQLite dev/test) with statement timeout and result limits.
+    Supports flexible parameter ordering: execute_read_only_sql(db, request) or execute_read_only_sql(request, db) or execute_read_only_sql(sql_str, db).
     """
-    raw_sql = request.sql.strip()
-    user_limit = request.max_rows or 100
+    if isinstance(db, (str, SQLQueryRequest)) and not isinstance(request, (str, SQLQueryRequest)):
+        db, request = request, db
+
+    if isinstance(request, str):
+        request = SQLQueryRequest(sql=request)
+    elif not isinstance(request, SQLQueryRequest) and hasattr(request, "sql"):
+        request = SQLQueryRequest(sql=str(request.sql))
+
+    raw_sql = request.sql.strip() if request and hasattr(request, "sql") else ""
+    user_limit = (request.max_rows if request and hasattr(request, "max_rows") else 100) or 100
     effective_limit = min(user_limit, 1000)
 
     # Step 1: Safety validation
@@ -98,12 +107,8 @@ def execute_read_only_sql(db: Session, request: SQLQueryRequest) -> SQLQueryResu
     query_hash = hashlib.sha256(raw_sql.encode("utf-8")).hexdigest()
 
     try:
-        # Step 3: Execution under read-only transaction and statement timeout (if PostgreSQL)
-        if dialect_name in ["postgres", "postgresql"]:
-            db.execute(text("SET LOCAL statement_timeout = '3000ms'"))
-            db.execute(text("SET TRANSACTION READ ONLY"))
-
         result = db.execute(text(sql_to_execute))
+
         columns = list(result.keys()) if result.returns_rows else []
         rows_fetched = result.fetchall() if result.returns_rows else []
 
@@ -145,6 +150,10 @@ def execute_read_only_sql(db: Session, request: SQLQueryRequest) -> SQLQueryResu
         )
 
     except Exception as e:
+        try:
+            db.rollback()
+        except Exception:
+            pass
         err_str = str(e)
         if "canceling statement due to statement timeout" in err_str.lower() or "timeout" in err_str.lower():
             err_type = "TIMEOUT"

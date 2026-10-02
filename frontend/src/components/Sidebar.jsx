@@ -4,10 +4,21 @@ import React from 'react';
  * Prototype-aligned Navigation Sidebar for VERIDEX Decision Intelligence Engine.
  * Allows seamless navigation across product views while preserving active investigation state.
  */
-export function Sidebar({ activeView, onSelectView, userRole = 'ANALYST', collapsed = false, onToggleCollapse }) {
+export function Sidebar({ activeView, onSelectView, setActiveView, userRole = 'ANALYST', collapsed = false, onToggleCollapse, setCollapsed }) {
+  const handleSelectView = (viewId) => {
+    if (onSelectView) onSelectView(viewId);
+    else if (setActiveView) setActiveView(viewId);
+  };
+
+  const handleToggle = () => {
+    if (onToggleCollapse) onToggleCollapse();
+    else if (setCollapsed) setCollapsed(!collapsed);
+  };
+
   const isAuditorOrAdmin = userRole === 'AUDITOR' || userRole === 'ADMIN';
 
   const navItems = [
+    { id: 'landing', label: 'Landing Page', icon: '🏠' },
     { id: 'overview', label: 'Overview', icon: '📊' },
     { id: 'workspace', label: 'Workspace', icon: '🔍' },
     { id: 'decisions', label: 'Decisions', icon: '🎯' },
@@ -25,7 +36,15 @@ export function Sidebar({ activeView, onSelectView, userRole = 'ANALYST', collap
     <aside className={`app-sidebar ${collapsed ? 'collapsed' : ''}`} aria-label="Sidebar Navigation">
       <div className="sidebar-header" style={{ padding: '1rem', borderBottom: '1px solid var(--border-light)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         {!collapsed && (
-          <div className="brand-group" style={{ gap: '0.5rem' }}>
+          <div
+            className="brand-group"
+            onClick={() => handleSelectView('landing')}
+            style={{ gap: '0.5rem', cursor: 'pointer' }}
+            title="Return to Landing Page"
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => e.key === 'Enter' && handleSelectView('landing')}
+          >
             <div className="brand-logo" aria-hidden="true" style={{ width: '28px', height: '28px', fontSize: '0.875rem' }}>
               <span className="logo-symbol">V</span>
             </div>
@@ -35,7 +54,7 @@ export function Sidebar({ activeView, onSelectView, userRole = 'ANALYST', collap
         <button
           type="button"
           className="btn-sidebar-toggle"
-          onClick={onToggleCollapse}
+          onClick={handleToggle}
           title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           style={{
@@ -53,13 +72,13 @@ export function Sidebar({ activeView, onSelectView, userRole = 'ANALYST', collap
 
       <nav className="sidebar-nav" style={{ padding: '0.75rem 0.5rem', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
         {navItems.map((item) => {
-          const isActive = activeView === item.id;
+          const isActive = activeView === item.id || (item.id === 'workspace' && activeView === 'ask');
           return (
             <button
               key={item.id}
               type="button"
               className={`sidebar-nav-btn ${isActive ? 'active' : ''}`}
-              onClick={() => onSelectView(item.id)}
+              onClick={() => handleSelectView(item.id)}
               title={collapsed ? item.label : undefined}
               style={{
                 display: 'flex',

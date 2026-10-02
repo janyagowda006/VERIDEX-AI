@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>VERIDEX — Evidence Explorer</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0A0C10;--s1:#11141A;--s2:#181C24;--line:#242A35;--tx:#E8ECF2;--mu:#8B95A5;--pr:#4C8DFF;--fact:#5B9DFF;--der:#9A87F5;--inf:#E0A94A;--ok:#4CB782;
+--sans:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;--mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:14px/1.5 var(--sans);-webkit-font-smoothing:antialiased}
+.app{display:grid;grid-template-columns:216px minmax(0,1fr);min-height:100vh}
+aside.sb{background:var(--s1);border-right:1px solid var(--line);padding:18px 12px;display:flex;flex-direction:column;position:sticky;top:0;height:100vh}
+.logo{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:.14em;font-size:13px;padding:0 8px 22px}
+.mark{width:20px;height:20px;border:2px solid var(--pr);border-radius:5px;position:relative;flex:none}
+.mark:after{content:"";position:absolute;left:4px;top:2px;width:5px;height:9px;border:solid var(--pr);border-width:0 2px 2px 0;transform:rotate(40deg)}
+.nav a{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:6px;color:var(--mu);text-decoration:none;font-weight:500;margin-bottom:2px}
+.nav a i{width:14px;height:14px;border:1.5px solid currentColor;border-radius:3px;flex:none;opacity:.8}
+.nav a.on{background:#4C8DFF18;color:var(--tx)}.nav a.on i{border-color:var(--pr)}
+.ws{margin-top:auto;border-top:1px solid var(--line);padding-top:12px;font-size:13px}
+.ws div{display:flex;align-items:center;gap:10px;padding:6px 8px}
+.av{width:28px;height:28px;border-radius:50%;background:var(--s2);border:1px solid var(--line);display:grid;place-items:center;font:600 11px var(--sans);flex:none}
+.ws small{display:block;color:var(--mu);font-size:11.5px}
+main{padding:28px 36px 48px;min-width:0;max-width:1224px}
+h1{margin:0;font-size:24px;letter-spacing:-.02em;font-weight:650}
+.sub{margin:2px 0 20px;color:var(--mu)}
+.card{background:var(--s1);border:1px solid var(--line);border-radius:10px}
+.cap{font:500 11px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--mu)}
+.tb{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+.search{flex:1;min-width:220px;max-width:360px;background:var(--s1);border:1px solid var(--line);border-radius:7px;padding:7px 12px;color:var(--tx);font:13px var(--sans)}
+.search:focus{outline:1px solid var(--pr);border-color:var(--pr)}
+.chip{border:1px solid var(--line);border-radius:999px;padding:4px 12px;color:var(--mu);background:transparent;font:500 12.5px var(--sans);cursor:pointer}
+.chip.on{color:var(--tx);border-color:var(--pr);background:#4C8DFF14}
+.sel{background:var(--s1);border:1px solid var(--line);border-radius:7px;padding:6px 10px;color:var(--mu);font-size:12.5px}
+.cnt{margin-left:auto;color:var(--mu);font:12px var(--mono)}
+.scroll{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{font:500 10.5px var(--mono);letter-spacing:.08em;color:var(--mu);text-align:left;padding:9px 14px;border-bottom:1px solid var(--line);text-transform:uppercase;white-space:nowrap}
+td{padding:11px 14px;border-bottom:1px solid var(--line);white-space:nowrap}
+tbody tr{cursor:pointer}
+tbody tr:hover td{background:var(--s2)}
+tbody tr.on td{background:#4C8DFF10}
+tbody tr.on td:first-child{box-shadow:inset 2px 0 0 var(--pr)}
+tr:last-child td{border-bottom:0}
+td.d{white-space:normal;min-width:240px;font-weight:500}
+td.d small{display:block;color:var(--mu);font-weight:400;font-size:12px}
+td.m{font:12px var(--mono);color:var(--mu)}
+td.id{font:500 12px var(--mono);color:var(--fact)}
+.badge{font:500 10.5px var(--mono);letter-spacing:.05em;padding:2px 7px;border-radius:4px;border:1px solid;text-transform:uppercase;white-space:nowrap}
+.b-fact{color:var(--fact);border-color:#2B4A7A;background:#5B9DFF14}
+.b-der{color:var(--der);border-color:#4A407F;background:#9A87F514}
+.b-inf{color:var(--inf);border-color:#6E5526;background:#E0A94A14}
+.leg{display:flex;gap:18px;flex-wrap:wrap;margin-top:12px;color:var(--mu);font-size:12px}
+.leg span{display:flex;gap:7px;align-items:center}
+/* drawer */
+.dr{position:fixed;top:0;right:0;height:100vh;width:460px;max-width:100vw;background:var(--s1);border-left:1px solid var(--line);box-shadow:-24px 0 48px rgba(0,0,0,.55);overflow-y:auto;padding:20px 22px 32px;z-index:5;transform:translateX(0);transition:transform .18s}
+.dr.h{transform:translateX(105%)}
+.ph{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:10px}
+.x{background:none;border:1px solid var(--line);color:var(--mu);border-radius:6px;width:28px;height:28px;cursor:pointer;font-size:15px}
+.dr h3{margin:4px 0 4px;font-size:16px}
+.dr .desc{color:var(--mu);font-size:13px;margin:0 0 16px}
+.blk{margin-bottom:16px}.blk .cap{margin-bottom:6px}
+pre{margin:0;background:#0C0F14;border:1px solid var(--line);border-radius:8px;padding:11px 13px;font:12px/1.6 var(--mono);color:#B9C3D3;overflow-x:auto}
+.k{color:var(--der)}.n{color:var(--inf)}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font:12px var(--mono)}
+.kv span:nth-child(odd){color:var(--mu)}
+.rows{width:100%;border:1px solid var(--line);border-radius:8px;font:12px var(--mono)}
+.rows th{padding:6px 10px;background:var(--bg);font-size:10.5px}
+.rows td{padding:6px 10px;white-space:normal}
+.rows tr.hl td{background:#4C8DFF12}
+.rows .r{text-align:right}
+.lim{border-left:2px solid var(--line);padding-left:10px;color:var(--mu);font-size:12.5px}
+.used{display:grid;gap:6px}
+.used div{background:var(--s2);border:1px solid var(--line);border-radius:7px;padding:7px 10px;font-size:12.5px}
+.foot{display:flex;gap:8px}
+.btn{display:inline-flex;padding:7px 13px;border-radius:7px;font:600 13px var(--sans);border:1px solid var(--line);color:var(--tx);background:transparent;cursor:pointer}
+.note{color:var(--mu);font-size:11.5px;margin-top:20px}
+@media (max-width:1180px){.app{grid-template-columns:60px minmax(0,1fr)}.nav a span,.logo span,.ws small,.ws b{display:none}.nav a{justify-content:center}.logo{justify-content:center;padding-inline:0}main{padding:24px 20px}}
+</style></head><body>
+<div class="app">
+<aside class="sb">
+<div class="logo"><div class="mark"></div><span>VERIDEX</span></div>
+<div class="nav"><a href="#"><i></i><span>Overview</span></a><a href="#"><i></i><span>Investigations</span></a><a href="#"><i></i><span>Data Sources</span></a><a class="on" href="#"><i></i><span>Evidence</span></a><a href="#"><i></i><span>Decisions</span></a><a href="#"><i></i><span>History</span></a><a href="#"><i></i><span>Settings</span></a></div>
+<div class="ws"><div><span class="av">AC</span><span><b>Acme Retail</b><small>Workspace</small></span></div><div><span class="av">G</span><span><b>Gagandeep</b><small>Analyst</small></span></div></div>
+</aside>
+
+<main>
+<h1>Evidence Explorer</h1>
+<p class="sub">Every fact, calculation and inference behind your answers, with its source.</p>
+<div class="tb">
+<input class="search" id="q" placeholder="Search description or ID…">
+<button class="chip on" data-t="ALL">All</button><button class="chip" data-t="Fact">Fact</button><button class="chip" data-t="Derived">Derived fact</button><button class="chip" data-t="Inference">Inference</button>
+<span class="sel">Investigation: All ▾</span><span class="cnt" id="cnt"></span></div>
+<div class="card scroll"><table>
+<thead><tr><th>ID</th><th>Type</th><th>Description</th><th>Source</th><th>Investigation</th><th>Timestamp</th><th>Used by</th></tr></thead>
+<tbody id="tb"></tbody></table></div>
+<div class="leg"><span><span class="badge b-fact">Fact</span>Directly observed</span><span><span class="badge b-der">Derived</span>Calculated from evidence</span><span><span class="badge b-inf">Inference</span>Reasoned conclusion</span></div>
+<p class="note">Sample data shown for illustration. Click a row to open its full provenance.</p>
+</main>
+<div class="dr" id="dr"></div>
+</div>
+<script>
+const SQL1=`<span class="k">SELECT</span> region, <span class="k">SUM</span>(revenue) <span class="k">AS</span> rev
+<span class="k">FROM</span> orders
+<span class="k">WHERE</span> quarter <span class="k">IN</span> (<span class="n">'Q1'</span>,<span class="n">'Q2'</span>,<span class="n">'Q3'</span>)
+<span class="k">GROUP BY</span> region <span class="k">ORDER BY</span> rev <span class="k">DESC</span>;`;
+const SQL2=`<span class="k">SELECT</span> region, <span class="k">ROUND</span>(<span class="k">SUM</span>(profit)*<span class="n">100.0</span>/<span class="k">SUM</span>(revenue),<span class="n">1</span>) <span class="k">AS</span> margin
+<span class="k">FROM</span> orders <span class="k">WHERE</span> quarter <span class="k">IN</span> (<span class="n">'Q1'</span>,<span class="n">'Q2'</span>,<span class="n">'Q3'</span>)
+<span class="k">GROUP BY</span> region;`;
+const D=[
+{id:"E-01",t:"Fact",bc:"b-fact",d:"Revenue by region, Q1–Q3",s:"sql · orders",inv:"inv_0142",ts:"Sep 30 14:12",u:2,sql:SQL1,cols:["region","rev"],rows:[["North","4,820,311",1],["East","4,110,942"],["South","3,640,118"],["West","2,905,570"]],meta:[["source_type","sql_query"],["query_hash","a3f9…c21e"],["rows","4"],["duration","0.6 s"],["mode","read-only"]],calc:null,lim:"Covers Q1–Q3 only. Q4 is not in the data.",cl:["North generated the highest revenue at $4.82M."]},
+{id:"E-02",t:"Fact",bc:"b-fact",d:"Margin by region, Q1–Q3",s:"sql · orders",inv:"inv_0142",ts:"Sep 30 14:12",u:1,sql:SQL2,cols:["region","margin %"],rows:[["North","31.4",1],["East","27.9"],["South","26.1"],["West","15.4"]],meta:[["source_type","sql_query"],["query_hash","7be2…09d4"],["rows","4"],["duration","0.7 s"],["mode","read-only"]],calc:null,lim:"Margin uses recorded profit; returns are not netted out.",cl:["North margin is 6.2 points above average."]},
+{id:"E-03",t:"Derived",bc:"b-der",d:"North margin vs regional average",s:"calculation · from E-02",inv:"inv_0142",ts:"Sep 30 14:12",u:1,sql:null,cols:["input","value"],rows:[["North margin","31.4",1],["Average margin","25.2"],["Delta","6.2 pts"]],meta:[["source_type","calculation"],["depends_on","E-02"],["method","deterministic"]],calc:`delta = <span class="n">31.4</span> - <span class="n">25.2</span> = <span class="n">6.2</span> pts`,lim:"Unweighted average across regions.",cl:["North margin is 6.2 points above average."]},
+{id:"E-05",t:"Inference",bc:"b-inf",d:"North as priority candidate for Q4",s:"decision analysis",inv:"inv_0142",ts:"Sep 30 14:12",u:1,sql:null,cols:["criterion","weight"],rows:[["Revenue","0.5"],["Margin","0.3"],["Growth","0.2"]],meta:[["source_type","decision_analysis"],["depends_on","E-01, E-03, E-04"]],calc:`North <span class="n">0.90</span> &gt; East <span class="n">0.75</span> &gt; South <span class="n">0.39</span> &gt; West <span class="n">0.05</span>`,lim:"Weights are configured assumptions, not observed data.",cl:["North is the strongest candidate for Q4."]},
+{id:"E-11",t:"Fact",bc:"b-fact",d:"Return rate by region, Q3",s:"sql · returns",inv:"inv_0139",ts:"Sep 27 10:05",u:0,sql:`<span class="k">SELECT</span> region, <span class="k">COUNT</span>(*) <span class="k">FILTER</span> (<span class="k">WHERE</span> returned)*<span class="n">1.0</span>/<span class="k">COUNT</span>(*) <span class="k">AS</span> rate
+<span class="k">FROM</span> orders <span class="k">WHERE</span> quarter=<span class="n">'Q3'</span> <span class="k">GROUP BY</span> region;`,cols:["region","rate"],rows:[["South","0.062",1],["North","0.041"]],meta:[["source_type","sql_query"],["query_hash","c410…5aa7"],["rows","4"]],calc:null,lim:"Only one quarter available; trend cannot be established.",cl:[]}
+];
+const tb=document.getElementById('tb'),dr=document.getElementById('dr');let T="ALL",sel=null;
+function render(){const q=document.getElementById('q').value.toLowerCase();
+const L=D.filter(e=>(T==="ALL"||e.t===T)&&(e.d.toLowerCase().includes(q)||e.id.toLowerCase().includes(q)));
+document.getElementById('cnt').textContent=L.length+" of "+D.length+" items";
+tb.innerHTML=L.map(e=>`<tr data-id="${e.id}" class="${sel===e.id?'on':''}"><td class="id">${e.id}</td><td><span class="badge ${e.bc}">${e.t}</span></td><td class="d">${e.d}</td><td class="m">${e.s}</td><td class="m">${e.inv}</td><td class="m">${e.ts}</td><td class="m">${e.u} claim${e.u===1?'':'s'}</td></tr>`).join('')||`<tr><td colspan="7" style="text-align:center;color:var(--mu);padding:28px">No evidence matches these filters.</td></tr>`;
+tb.querySelectorAll('tr[data-id]').forEach(r=>r.onclick=()=>open(r.dataset.id))}
+function open(id){sel=id;const e=D.find(x=>x.id===id);
+dr.innerHTML=`<div class="ph"><span class="cap">Evidence · ${e.id}</span><span style="display:flex;gap:10px;align-items:center"><span class="badge ${e.bc}">${e.t}</span><button class="x" id="cl">×</button></span></div>
+<h3>${e.d}</h3><p class="desc">From investigation ${e.inv}, ${e.ts}.</p>
+${e.sql?`<div class="blk"><div class="cap">SQL</div><pre>${e.sql}</pre></div>`:''}
+${e.calc?`<div class="blk"><div class="cap">Calculation</div><pre>${e.calc}</pre></div>`:''}
+<div class="blk"><div class="cap">${e.sql?'Returned rows':'Inputs'}</div><table class="rows"><tr>${e.cols.map((c,i)=>`<th class="${i?'r':''}">${c}</th>`).join('')}</tr>${e.rows.map(r=>`<tr class="${r[2]?'hl':''}"><td>${r[0]}</td><td class="r">${r[1]}</td></tr>`).join('')}</table></div>
+<div class="blk"><div class="cap">Source and execution</div><div class="kv">${e.meta.map(m=>`<span>${m[0]}</span><span>${m[1]}</span>`).join('')}</div></div>
+<div class="blk"><div class="cap">Limitations</div><div class="lim">${e.lim}</div></div>
+<div class="blk"><div class="cap">Supports claims</div><div class="used">${e.cl.length?e.cl.map(c=>`<div>${c}</div>`).join(''):'<div style="color:var(--mu)">Not yet used by any claim.</div>'}</div></div>
+<div class="foot"><button class="btn">${e.sql?'Copy SQL':'Copy calculation'}</button><button class="btn">Open ${e.inv}</button></div>`;
+dr.classList.remove('h');document.getElementById('cl').onclick=()=>{dr.classList.add('h');sel=null;render()};render()}
+document.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{T=c.dataset.t;document.querySelectorAll('.chip').forEach(x=>x.classList.toggle('on',x===c));render()});
+document.getElementById('q').oninput=render;
+dr.classList.add('h');render();open("E-01");
+</script><style>.b-pr{color:#4C8DFF;border-color:#2B4A7A;background:#4C8DFF14}.links span:hover{color:#E8ECF2}
+.appr{padding:16px 18px;border-left:3px solid var(--ap,#4C8DFF)}.appr .ah{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.appr p{margin:8px 0 12px;color:#C6CEDA;font-size:13.5px}.appr .ab{display:flex;gap:8px;flex-wrap:wrap}
+.apbtn{background:none;border:1px solid #242A35;color:#E8ECF2;border-radius:7px;padding:7px 14px;font:600 13px Inter,system-ui,sans-serif;cursor:pointer}.apbtn:hover{border-color:#3A4658}.apbtn.pr{background:#4C8DFF;border-color:#4C8DFF;color:#06101F}</style>
+<script>(function(){var go=function(k){parent.postMessage({veridex:k},'*')};
+var NAV={'Overview':'overview','Investigations':'ask','Data Sources':'sources','Evidence':'evidence','Decisions':'decision','History':'history','Settings':'settings'};
+var RULES=[{"r": "^Open inv_", "to": "detail"}, {"s": ".logo", "to": "overview"}];
+var B={pending:'<span class="badge b-pr">Pending review</span>',approved:'<span class="badge b-ok">Approved</span>',rejected:'<span class="badge b-neu">Rejected</span>'};
+window.VXS={approval:'pending',at:''};
+function paint(){var S=window.VXS,a=S.approval;
+document.querySelectorAll('[data-apbadge]').forEach(function(el){el.innerHTML=B[a]});
+document.querySelectorAll('[data-appr]').forEach(function(el){
+el.style.setProperty('--ap',a==='approved'?'#4CB782':a==='rejected'?'#8B95A5':'#4C8DFF');
+el.innerHTML=a==='pending'?'<div class="ah"><span class="cap">Human approval</span>'+B.pending+'</div><p><b>Prioritize North region</b><br>Review the evidence, then approve or reject. VERIDEX recommends; you decide.</p><div class="ab"><button class="apbtn" data-a="ev">Review evidence</button><button class="apbtn" data-a="rej">Reject</button><button class="apbtn pr" data-a="ok">Approve</button></div>'
+:'<div class="ah"><span class="cap">Human approval</span>'+B[a]+'</div><p><b>'+(a==='approved'?'Approved':'Rejected')+'</b> by Gagandeep · '+S.at+'<br>Recorded with 7 evidence items and a Stable robustness check.</p><div class="ab"><button class="apbtn" data-a="undo">Undo</button></div>'})}
+window.addEventListener('message',function(e){if(e.data&&e.data.vxState){window.VXS=e.data.vxState;paint();document.dispatchEvent(new Event('vxstate'))}});
+var AT='Sep 30, 14:31';
+document.addEventListener('click',function(e){var b=e.target.closest('.apbtn[data-a]');if(!b)return;var a=b.dataset.a;
+if(a==='ev'){if(typeof show==='function'&&document.getElementById('panel'))show('E-01');else go('evidence')}
+else parent.postMessage({vxSet:{approval:a==='ok'?'approved':a==='rej'?'rejected':'pending',at:AT}},'*')});
+document.addEventListener('click',function(e){
+if(e.target.closest('.apbtn'))return;
+var n=e.target.closest('.nav a');if(n){e.preventDefault();var k=NAV[n.textContent.trim()];if(k)go(k);return}
+for(var i=0;i<RULES.length;i++){var u=RULES[i],el=e.target.closest(u.s||'a,button');if(!el)continue;
+if(u.r&&!new RegExp(u.r).test((el.textContent||'').trim()))continue;
+e.preventDefault();e.stopPropagation();go(u.to);return}
+var a=e.target.closest('a');if(a&&a.getAttribute('href')==='#')e.preventDefault()},true);
+paint()})();</script></body></html>

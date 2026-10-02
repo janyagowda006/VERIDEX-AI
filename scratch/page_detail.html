@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>VERIDEX — Investigation Detail</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0A0C10;--s1:#11141A;--s2:#181C24;--line:#242A35;--tx:#E8ECF2;--mu:#8B95A5;--pr:#4C8DFF;--fact:#5B9DFF;--der:#9A87F5;--inf:#E0A94A;--ok:#4CB782;--warn:#E0A94A;--neu:#8B95A5;
+--sans:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;--mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px);scroll-behavior:smooth}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:14px/1.5 var(--sans);-webkit-font-smoothing:antialiased}
+.app{display:grid;grid-template-columns:216px minmax(0,1fr) 190px;min-height:100vh}
+aside.sb{background:var(--s1);border-right:1px solid var(--line);padding:18px 12px;display:flex;flex-direction:column;position:sticky;top:0;height:100vh}
+.logo{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:.14em;font-size:13px;padding:0 8px 22px}
+.mark{width:20px;height:20px;border:2px solid var(--pr);border-radius:5px;position:relative;flex:none}
+.mark:after{content:"";position:absolute;left:4px;top:2px;width:5px;height:9px;border:solid var(--pr);border-width:0 2px 2px 0;transform:rotate(40deg)}
+.nav a{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:6px;color:var(--mu);text-decoration:none;font-weight:500;margin-bottom:2px}
+.nav a i{width:14px;height:14px;border:1.5px solid currentColor;border-radius:3px;flex:none;opacity:.8}
+.nav a.on{background:#4C8DFF18;color:var(--tx)}.nav a.on i{border-color:var(--pr)}
+.ws{margin-top:auto;border-top:1px solid var(--line);padding-top:12px;font-size:13px}
+.ws div{display:flex;align-items:center;gap:10px;padding:6px 8px}
+.av{width:28px;height:28px;border-radius:50%;background:var(--s2);border:1px solid var(--line);display:grid;place-items:center;font:600 11px var(--sans);flex:none}
+.ws small{display:block;color:var(--mu);font-size:11.5px}
+main{padding:24px 32px 56px;min-width:0;max-width:960px}
+.crumb{color:var(--mu);font-size:12.5px;margin-bottom:12px}
+.crumb a{color:var(--pr);text-decoration:none}
+.hd{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;margin-bottom:6px;flex-wrap:wrap}
+h1{margin:0;font-size:22px;letter-spacing:-.02em;font-weight:650}
+.meta{display:flex;gap:16px;flex-wrap:wrap;color:var(--mu);font:12px var(--mono);margin-bottom:20px;align-items:center}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:7px 13px;border-radius:7px;font:600 13px var(--sans);border:1px solid var(--line);color:var(--tx);background:transparent}
+.card{background:var(--s1);border:1px solid var(--line);border-radius:10px}
+.cap{font:500 11px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--mu)}
+.badge{font:500 10.5px var(--mono);letter-spacing:.05em;padding:2px 7px;border-radius:4px;border:1px solid;text-transform:uppercase;white-space:nowrap}
+.b-fact{color:var(--fact);border-color:#2B4A7A;background:#5B9DFF14}
+.b-der{color:var(--der);border-color:#4A407F;background:#9A87F514}
+.b-inf{color:var(--inf);border-color:#6E5526;background:#E0A94A14}
+.b-ok{color:var(--ok);border-color:#2A5C44;background:#4CB78214}
+.ans{padding:18px 20px;margin-bottom:14px;border-color:#2B3A55}
+.ans h2{margin:6px 0 6px;font-size:20px;font-weight:650;letter-spacing:-.02em}
+.ans p{margin:0;color:#C6CEDA;max-width:680px}
+details.sec{margin-bottom:12px}
+details.sec>summary{list-style:none;cursor:pointer;padding:12px 16px;display:flex;align-items:center;gap:10px}
+details.sec>summary::-webkit-details-marker{display:none}
+details.sec>summary:before{content:"›";color:var(--mu);transition:transform .12s;display:inline-block;width:10px}
+details[open].sec>summary:before{transform:rotate(90deg)}
+details.sec>summary h3{margin:0;font-size:14px;font-weight:600}
+details.sec>summary .ct{margin-left:auto;color:var(--mu);font:12px var(--mono)}
+.inner{border-top:1px solid var(--line);padding:14px 16px}
+.step{display:grid;grid-template-columns:20px 1fr;gap:10px}
+.rail{display:flex;flex-direction:column;align-items:center}
+.rail .d{width:10px;height:10px;border-radius:50%;background:var(--ok);margin-top:6px;flex:none}
+.rail .l{flex:1;width:1px;background:var(--line);margin-top:4px}
+.step:last-child .l{display:none}
+.st{padding-bottom:12px;min-width:0}
+.st>div{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.st code{font:500 12.5px var(--mono)}
+.st .s{color:var(--mu);font-size:12.5px}
+.st .du{margin-left:auto;font:11.5px var(--mono);color:var(--mu)}
+.st details{margin-top:6px}
+.st details summary{cursor:pointer;color:var(--pr);font-size:12.5px;list-style:none}
+.st details summary::-webkit-details-marker{display:none}
+pre{margin:8px 0 0;background:#0C0F14;border:1px solid var(--line);border-radius:8px;padding:11px 13px;font:12px/1.6 var(--mono);color:#B9C3D3;overflow-x:auto}
+.k{color:var(--der)}.n{color:var(--inf)}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:3px 14px;font:12px var(--mono);margin-top:8px}
+.kv span:nth-child(odd){color:var(--mu)}
+.sc{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{font:500 10.5px var(--mono);letter-spacing:.08em;color:var(--mu);text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);text-transform:uppercase;white-space:nowrap}
+td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+tr:last-child td{border-bottom:0}
+td.m{font-family:var(--mono);white-space:nowrap}
+td.r,th.r{text-align:right}
+tr.top td{background:#4C8DFF10}
+.eid{font:11.5px var(--mono);color:var(--fact);border-bottom:1px dashed var(--fact);margin-right:8px;white-space:nowrap}
+.map{display:grid;grid-template-columns:1fr auto 1fr;gap:6px 14px;align-items:center;font-size:13px}
+.map .c,.map .e{background:var(--s2);border:1px solid var(--line);border-radius:7px;padding:8px 11px}
+.map .a{color:var(--mu)}
+.rob{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px}
+.rob .card{padding:12px;background:var(--bg)}
+.rob b{display:block;font-size:15px;margin-top:2px}
+.callout{border-left:3px solid var(--ok);background:#4CB78210;padding:10px 14px;border-radius:0 8px 8px 0;color:#C6CEDA}
+aside.toc{position:sticky;top:0;height:100vh;padding:80px 8px 0 0;font-size:12.5px}
+.toc a{display:block;padding:5px 10px;color:var(--mu);text-decoration:none;border-left:1px solid var(--line)}
+.toc a.on{color:var(--tx);border-left-color:var(--pr)}
+.toc .cap{padding:0 10px 8px}
+.note{color:var(--mu);font-size:11.5px;margin-top:20px}
+@media (max-width:1320px){.app{grid-template-columns:60px minmax(0,1fr) 170px}.nav a span,.logo span,.ws small,.ws b{display:none}.nav a{justify-content:center}.logo{justify-content:center;padding-inline:0}}
+@media (max-width:1000px){.app{grid-template-columns:60px minmax(0,1fr)}aside.toc{display:none}main{padding:20px 16px}.rob,.map{grid-template-columns:1fr}.map .a{display:none}}
+</style></head><body>
+<div class="app">
+<aside class="sb">
+<div class="logo"><div class="mark"></div><span>VERIDEX</span></div>
+<div class="nav"><a href="#"><i></i><span>Overview</span></a><a class="on" href="#"><i></i><span>Investigations</span></a><a href="#"><i></i><span>Data Sources</span></a><a href="#"><i></i><span>Evidence</span></a><a href="#"><i></i><span>Decisions</span></a><a href="#"><i></i><span>History</span></a><a href="#"><i></i><span>Settings</span></a></div>
+<div class="ws"><div><span class="av">AC</span><span><b>Acme Retail</b><small>Workspace</small></span></div><div><span class="av">G</span><span><b>Gagandeep</b><small>Analyst</small></span></div></div>
+</aside>
+
+<main>
+<div class="crumb"><a href="#">History</a> / inv_0142</div>
+<div class="hd"><h1>What region should we prioritize for Q4?</h1><div style="display:flex;gap:8px"><button class="btn">Export trace</button><button class="btn">Ask follow-up</button></div></div>
+<div class="meta"><span>Today, 14:12</span><span>Duration 3.4 s</span><span>6 tool calls</span><span>7 evidence</span><span class="badge b-ok">✓ Stable</span></div>
+
+<div class="card ans" id="summary"><span class="cap">Answer</span><h2>Prioritize North for Q4.</h2><p>North has the highest revenue and margin of the four regions and stays first when the weighting is changed. East is the closest alternative.</p></div>
+
+<details class="card sec" id="timeline" open><summary><h3>Investigation timeline</h3><span class="ct">6 steps · 3.4 s</span></summary><div class="inner">
+<div class="step"><div class="rail"><span class="d"></span><span class="l"></span></div><div class="st"><div><code>inspect_schema</code><span class="s">orders, regions</span><span class="du">0.2s</span></div></div></div>
+<div class="step"><div class="rail"><span class="d"></span><span class="l"></span></div><div class="st"><div><code>run_sql</code><span class="s">revenue by region</span><span class="du">0.6s</span></div>
+<details open><summary>SQL and execution ▾</summary>
+<pre><span class="k">SELECT</span> region, <span class="k">SUM</span>(revenue) <span class="k">AS</span> rev
+<span class="k">FROM</span> orders <span class="k">WHERE</span> quarter <span class="k">IN</span> (<span class="n">'Q1'</span>,<span class="n">'Q2'</span>,<span class="n">'Q3'</span>)
+<span class="k">GROUP BY</span> region <span class="k">ORDER BY</span> rev <span class="k">DESC</span>;</pre>
+<div class="kv"><span>query_hash</span><span>a3f9…c21e</span><span>timestamp</span><span>2026-09-30 14:12:03</span><span>rows_returned</span><span>4</span><span>mode</span><span>read-only</span><span>produced</span><span>E-01</span></div></details></div></div>
+<div class="step"><div class="rail"><span class="d"></span><span class="l"></span></div><div class="st"><div><code>run_sql</code><span class="s">margin by region</span><span class="du">0.7s</span></div><details><summary>SQL and execution ▸</summary></details></div></div>
+<div class="step"><div class="rail"><span class="d"></span><span class="l"></span></div><div class="st"><div><code>calculate_derived</code><span class="s">margin vs average</span><span class="du">0.1s</span></div></div></div>
+<div class="step"><div class="rail"><span class="d"></span><span class="l"></span></div><div class="st"><div><code>evaluate_decision</code><span class="s">4 candidates, 3 criteria</span><span class="du">0.3s</span></div></div></div>
+<div class="step"><div class="rail"><span class="d"></span><span class="l"></span></div><div class="st"><div><code>check_robustness</code><span class="s">3 alternate scenarios</span><span class="du">0.4s</span></div></div></div>
+</div></details>
+
+<details class="card sec" id="claims" open><summary><h3>Claims → evidence</h3><span class="ct">3 supported</span></summary><div class="inner">
+<div class="map">
+<div class="c"><span class="badge b-fact">Fact</span> North generated the highest revenue at $4.82M.</div><span class="a">→</span><div class="e"><span class="eid">E-01</span>Revenue by region, Q1–Q3</div>
+<div class="c"><span class="badge b-der">Derived</span> North margin is 6.2 points above average.</div><span class="a">→</span><div class="e"><span class="eid">E-03</span>Margin vs regional average</div>
+<div class="c"><span class="badge b-inf">Inference</span> North is the strongest Q4 candidate.</div><span class="a">→</span><div class="e"><span class="eid">E-01</span><span class="eid">E-03</span><span class="eid">E-05</span></div>
+</div></div></details>
+
+<details class="card sec" id="evidence" open><summary><h3>Evidence</h3><span class="ct">7 items</span></summary><div class="inner sc"><table>
+<tr><th>ID</th><th>Type</th><th>Description</th><th>Source</th></tr>
+<tr><td class="m">E-01</td><td><span class="badge b-fact">Fact</span></td><td>Revenue by region, Q1–Q3</td><td class="m">sql · 4 rows</td></tr>
+<tr><td class="m">E-02</td><td><span class="badge b-fact">Fact</span></td><td>Margin by region, Q1–Q3</td><td class="m">sql · 4 rows</td></tr>
+<tr><td class="m">E-03</td><td><span class="badge b-der">Derived</span></td><td>North margin vs regional average</td><td class="m">calc · from E-02</td></tr>
+<tr><td class="m">E-05</td><td><span class="badge b-inf">Inference</span></td><td>North as priority candidate</td><td class="m">decision</td></tr>
+</table><div style="margin-top:8px;font-size:12.5px;color:var(--mu)">3 more items · <a style="color:var(--pr)" href="#">Open in Evidence Explorer</a></div></div></details>
+
+<details class="card sec" id="derived"><summary><h3>Derived calculations</h3><span class="ct">2</span></summary><div class="inner">
+<pre>delta = margin_north - avg_margin
+      = <span class="n">31.4</span> - <span class="n">25.2</span> = <span class="n">6.2</span> pts   <span style="color:var(--mu)"># E-03, inputs: E-02</span></pre></div></details>
+
+<details class="card sec" id="decision" open><summary><h3>Decision analysis</h3><span class="ct">North ranked #1</span></summary><div class="inner sc"><table>
+<tr><th>Candidate</th><th class="r">Revenue · 0.5</th><th class="r">Margin · 0.3</th><th class="r">Growth · 0.2</th><th class="r">Score</th></tr>
+<tr class="top"><td>1 · North</td><td class="m r">1.00</td><td class="m r">1.00</td><td class="m r">0.52</td><td class="m r">0.90</td></tr>
+<tr><td>2 · East</td><td class="m r">0.63</td><td class="m r">0.78</td><td class="m r">1.00</td><td class="m r">0.75</td></tr>
+<tr><td>3 · South</td><td class="m r">0.38</td><td class="m r">0.67</td><td class="m r">0.00</td><td class="m r">0.39</td></tr>
+<tr><td>4 · West</td><td class="m r">0.00</td><td class="m r">0.00</td><td class="m r">0.25</td><td class="m r">0.05</td></tr></table></div></details>
+
+<details class="card sec" id="robustness" open><summary><h3>Robustness</h3><span class="ct"><span class="badge b-ok">✓ Stable</span></span></summary><div class="inner">
+<div class="rob"><div class="card"><span class="cap">Baseline</span><b>North #1</b></div><div class="card"><span class="cap">Scenarios tested</span><b>3 alternate</b></div><div class="card"><span class="cap">Result</span><b style="color:var(--ok)">North #1 in 3 of 3</b></div></div>
+<div class="callout">Finding remains consistent across 3 alternate scenarios (margin ×2, revenue ×2, equal weights).</div></div></details>
+<details class="card sec" id="approval" open><summary><h3>Human approval</h3></summary><div class="inner" style="padding:0"><div class="appr" data-appr style="border-radius:0 0 10px 10px"></div></div></details>
+<p class="note">Sample data shown for illustration.</p>
+</main>
+
+<aside class="toc"><div class="cap">On this page</div>
+<a class="on" href="#summary">Answer</a><a href="#timeline">Timeline</a><a href="#claims">Claims</a><a href="#evidence">Evidence</a><a href="#derived">Calculations</a><a href="#decision">Decision</a><a href="#robustness">Robustness</a><a href="#approval">Approval</a></aside>
+</div><style>.b-pr{color:#4C8DFF;border-color:#2B4A7A;background:#4C8DFF14}.links span:hover{color:#E8ECF2}
+.appr{padding:16px 18px;border-left:3px solid var(--ap,#4C8DFF)}.appr .ah{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.appr p{margin:8px 0 12px;color:#C6CEDA;font-size:13.5px}.appr .ab{display:flex;gap:8px;flex-wrap:wrap}
+.apbtn{background:none;border:1px solid #242A35;color:#E8ECF2;border-radius:7px;padding:7px 14px;font:600 13px Inter,system-ui,sans-serif;cursor:pointer}.apbtn:hover{border-color:#3A4658}.apbtn.pr{background:#4C8DFF;border-color:#4C8DFF;color:#06101F}</style>
+<script>(function(){var go=function(k){parent.postMessage({veridex:k},'*')};
+var NAV={'Overview':'overview','Investigations':'ask','Data Sources':'sources','Evidence':'evidence','Decisions':'decision','History':'history','Settings':'settings'};
+var RULES=[{"r": "Ask follow-up", "to": "ask"}, {"r": "Open in Evidence Explorer", "to": "evidence"}, {"r": "^History$", "to": "history"}, {"s": ".logo", "to": "overview"}];
+var B={pending:'<span class="badge b-pr">Pending review</span>',approved:'<span class="badge b-ok">Approved</span>',rejected:'<span class="badge b-neu">Rejected</span>'};
+window.VXS={approval:'pending',at:''};
+function paint(){var S=window.VXS,a=S.approval;
+document.querySelectorAll('[data-apbadge]').forEach(function(el){el.innerHTML=B[a]});
+document.querySelectorAll('[data-appr]').forEach(function(el){
+el.style.setProperty('--ap',a==='approved'?'#4CB782':a==='rejected'?'#8B95A5':'#4C8DFF');
+el.innerHTML=a==='pending'?'<div class="ah"><span class="cap">Human approval</span>'+B.pending+'</div><p><b>Prioritize North region</b><br>Review the evidence, then approve or reject. VERIDEX recommends; you decide.</p><div class="ab"><button class="apbtn" data-a="ev">Review evidence</button><button class="apbtn" data-a="rej">Reject</button><button class="apbtn pr" data-a="ok">Approve</button></div>'
+:'<div class="ah"><span class="cap">Human approval</span>'+B[a]+'</div><p><b>'+(a==='approved'?'Approved':'Rejected')+'</b> by Gagandeep · '+S.at+'<br>Recorded with 7 evidence items and a Stable robustness check.</p><div class="ab"><button class="apbtn" data-a="undo">Undo</button></div>'})}
+window.addEventListener('message',function(e){if(e.data&&e.data.vxState){window.VXS=e.data.vxState;paint();document.dispatchEvent(new Event('vxstate'))}});
+var AT='Sep 30, 14:31';
+document.addEventListener('click',function(e){var b=e.target.closest('.apbtn[data-a]');if(!b)return;var a=b.dataset.a;
+if(a==='ev'){if(typeof show==='function'&&document.getElementById('panel'))show('E-01');else go('evidence')}
+else parent.postMessage({vxSet:{approval:a==='ok'?'approved':a==='rej'?'rejected':'pending',at:AT}},'*')});
+document.addEventListener('click',function(e){
+if(e.target.closest('.apbtn'))return;
+var n=e.target.closest('.nav a');if(n){e.preventDefault();var k=NAV[n.textContent.trim()];if(k)go(k);return}
+for(var i=0;i<RULES.length;i++){var u=RULES[i],el=e.target.closest(u.s||'a,button');if(!el)continue;
+if(u.r&&!new RegExp(u.r).test((el.textContent||'').trim()))continue;
+e.preventDefault();e.stopPropagation();go(u.to);return}
+var a=e.target.closest('a');if(a&&a.getAttribute('href')==='#')e.preventDefault()},true);
+paint()})();</script></body></html>

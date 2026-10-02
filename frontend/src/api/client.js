@@ -530,3 +530,203 @@ export async function listAuditLogs(useMock = false, user_id = null, action_type
   }
   return await response.json();
 }
+
+
+/**
+ * Uploads dynamic CSV or Excel (.xlsx, .xls) data source to backend.
+ * Connects to POST /api/data-sources/upload
+ *
+ * @param {File} file - File object (CSV or Excel)
+ * @param {boolean} useMock - Whether to run mock
+ * @returns {Promise<Object>} DataSourceUploadResponse object from backend
+ */
+export async function uploadDataSource(file, useMock = false) {
+  if (!file) {
+    throw new Error("File is required for upload.");
+  }
+  if (useMock) {
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        const sanitizedName = file.name.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+        resolve({
+          message: `File '${file.name}' successfully processed and loaded into table uploaded_${sanitizedName}`,
+          table_name: `uploaded_${sanitizedName}`,
+          rows_inserted: 120,
+          column_count: 4,
+          columns: ["id", "category", "val", "date"]
+        });
+      }, 500);
+    });
+  }
+
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const token = getAuthToken();
+  const headers = {};
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const response = await fetch('/api/data-sources/upload', {
+    method: 'POST',
+    headers: headers,
+    body: formData
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    let detail = errorText;
+    try {
+      const jsonErr = JSON.parse(errorText);
+      if (jsonErr.detail) detail = typeof jsonErr.detail === 'string' ? jsonErr.detail : JSON.stringify(jsonErr.detail);
+    } catch {
+      // fallback
+    }
+    throw new Error(detail || "Failed to upload data source.");
+  }
+
+  return await response.json();
+}
+
+
+/**
+ * Driver Decomposition API tool wrapper.
+ * Connects to POST /api/tools/decompose
+ */
+export async function runDriverDecomposition(params = {}, useMock = false) {
+  if (useMock) {
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        resolve({
+          metric: params.metric || "revenue",
+          period_a: params.period_a || { start_date: "2025-01-01", end_date: "2025-03-31" },
+          period_b: params.period_b || { start_date: "2025-04-01", end_date: "2025-06-30" },
+          period_a_total: 250000.0,
+          period_b_total: 171900.5,
+          total_change: -78099.5,
+          dimensions: ["region", "category"],
+          dimension_results: {},
+          waterfall: [
+            { label: "Baseline Period A", value: 250000.0, is_total: true, cumulative_total: 250000.0 },
+            { label: "Region Delta", value: -45000.0, is_total: false, cumulative_total: 205000.0 },
+            { label: "Category Delta", value: -33099.5, is_total: false, cumulative_total: 171900.5 },
+            { label: "Period B Revenue", value: 171900.5, is_total: true, cumulative_total: 171900.5 }
+          ],
+          evidence: []
+        });
+      }, 300);
+    });
+  }
+
+  const response = await fetch('/api/tools/decompose', {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(params)
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    let detail = errorText;
+    try {
+      const jsonErr = JSON.parse(errorText);
+      if (jsonErr.detail) detail = typeof jsonErr.detail === 'string' ? jsonErr.detail : JSON.stringify(jsonErr.detail);
+    } catch {
+      // fallback
+    }
+    throw new Error(detail || "Driver decomposition error.");
+  }
+  return await response.json();
+}
+
+/**
+ * Campaign Impact / DiD API tool wrapper.
+ * Connects to POST /api/tools/campaign-impact
+ */
+export async function evaluateCampaignImpact(params = {}, useMock = false) {
+  if (useMock) {
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        resolve({
+          campaign_id: params.campaign_id || "CMP-2025-Q3-SOUTH",
+          campaign_name: "Synthetic Demo Q3 South Campaign",
+          target_region: "South",
+          exposed_n: 31,
+          control_n: 7,
+          exposed_before: 1200.0,
+          exposed_after: 1450.0,
+          control_before: 1100.0,
+          control_after: 1150.0,
+          exposed_change: 250.0,
+          control_change: 50.0,
+          did: 200.0,
+          control_standard_error: 12.5,
+          status: "SUCCESS",
+          inference: "Exposed cohort showed +$200.00 lift relative to control. Observational evidence; causation not proven.",
+          disclaimer: "Observational evidence; causation not proven.",
+          evidence: []
+        });
+      }, 300);
+    });
+  }
+
+  const response = await fetch('/api/tools/campaign-impact', {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(params)
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    let detail = errorText;
+    try {
+      const jsonErr = JSON.parse(errorText);
+      if (jsonErr.detail) detail = typeof jsonErr.detail === 'string' ? jsonErr.detail : JSON.stringify(jsonErr.detail);
+    } catch {
+      // fallback
+    }
+    throw new Error(detail || "Campaign impact evaluation error.");
+  }
+  return await response.json();
+}
+
+/**
+ * Numerical Claim Verification API tool wrapper.
+ * Connects to POST /api/verify
+ */
+export async function verifyAnswerClaims(params = {}, useMock = false) {
+  if (useMock) {
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        resolve({
+          status: "PASS",
+          verified: [],
+          unverified: [],
+          total_claims: 2,
+          verified_count: 2,
+          unverified_count: 0,
+          summary: "All 2 numerical claims verified against evidence."
+        });
+      }, 300);
+    });
+  }
+
+  const response = await fetch('/api/verify', {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(params)
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    let detail = errorText;
+    try {
+      const jsonErr = JSON.parse(errorText);
+      if (jsonErr.detail) detail = typeof jsonErr.detail === 'string' ? jsonErr.detail : JSON.stringify(jsonErr.detail);
+    } catch {
+      // fallback
+    }
+    throw new Error(detail || "Claim verification error.");
+  }
+  return await response.json();
+}

@@ -1,0 +1,518 @@
+/* ==========================================================================
+   VERIDEX Page 7: Decision Intelligence CSS
+   Authoritative Reference: veridex-prototype-v2.html (P["decision"])
+   ========================================================================== */
+
+.decision-intelligence-container {
+  padding: 28px 36px 48px;
+  min-width: 0;
+  max-width: 1536px;
+  width: 100%;
+}
+
+.decision-intelligence-container .crumb {
+  color: var(--mu, #8B95A5);
+  font-size: 12.5px;
+  margin-bottom: 10px;
+}
+
+.decision-intelligence-container .crumb a {
+  color: var(--pr, #4C8DFF);
+  text-decoration: none;
+}
+
+.decision-intelligence-container h1 {
+  margin: 0;
+  font-size: 24px;
+  letter-spacing: -.02em;
+  font-weight: 650;
+  color: var(--tx, #E8ECF2);
+}
+
+.decision-intelligence-container .sub {
+  margin: 2px 0 20px;
+  color: var(--mu, #8B95A5);
+  font-size: 14px;
+}
+
+.decision-intelligence-container .card {
+  background: var(--s1, #11141A);
+  border: 1px solid var(--line, #242A35);
+  border-radius: 10px;
+}
+
+.decision-intelligence-container .cap {
+  font: 500 11px var(--mono, "JetBrains Mono", monospace);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--mu, #8B95A5);
+}
+
+.decision-intelligence-container .badge {
+  font: 500 10.5px var(--mono, "JetBrains Mono", monospace);
+  letter-spacing: .05em;
+  padding: 2px 7px;
+  border-radius: 4px;
+  border: 1px solid;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.decision-intelligence-container .b-fact {
+  color: var(--fact, #5B9DFF);
+  border-color: #2B4A7A;
+  background: #5B9DFF14;
+}
+
+.decision-intelligence-container .b-der {
+  color: var(--der, #9A87F5);
+  border-color: #4A407F;
+  background: #9A87F514;
+}
+
+.decision-intelligence-container .b-inf {
+  color: var(--inf, #E0A94A);
+  border-color: #6E5526;
+  background: #E0A94A14;
+}
+
+.decision-intelligence-container .b-ok {
+  color: var(--ok, #4CB782);
+  border-color: #2A5C44;
+  background: #4CB78214;
+}
+
+.decision-intelligence-container .b-neu {
+  color: var(--mu, #8B95A5);
+  border-color: #3A424F;
+  background: #8B95A514;
+}
+
+.decision-intelligence-container .b-pr {
+  color: #4C8DFF;
+  border-color: #2B4A7A;
+  background: #4C8DFF14;
+}
+
+/* Recommendation Card (.rec) */
+.decision-intelligence-container .rec {
+  padding: 20px 22px;
+  border-left: 3px solid var(--pr, #4C8DFF);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 20px;
+  margin-bottom: 18px;
+  align-items: center;
+}
+
+.decision-intelligence-container .rec h2 {
+  margin: 6px 0 6px;
+  font-size: 22px;
+  letter-spacing: -.02em;
+  font-weight: 650;
+  color: var(--tx, #E8ECF2);
+}
+
+.decision-intelligence-container .rec p {
+  margin: 0 0 12px;
+  color: #C6CEDA;
+  max-width: 640px;
+  font-size: 14px;
+}
+
+.decision-intelligence-container .eids {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  color: var(--mu, #8B95A5);
+  font-size: 12.5px;
+}
+
+.decision-intelligence-container .eid {
+  font: 11.5px var(--mono, "JetBrains Mono", monospace);
+  color: var(--fact, #5B9DFF);
+  border-bottom: 1px dashed var(--fact, #5B9DFF);
+}
+
+.decision-intelligence-container .side {
+  text-align: right;
+}
+
+.decision-intelligence-container .score {
+  font: 500 34px var(--mono, "JetBrains Mono", monospace);
+  letter-spacing: -.03em;
+  color: var(--tx, #E8ECF2);
+}
+
+.decision-intelligence-container .side .cap {
+  display: block;
+  margin-bottom: 2px;
+}
+
+.decision-intelligence-container .side .badge {
+  display: inline-block;
+  margin-top: 8px;
+}
+
+/* Two-column layout */
+.decision-intelligence-container .cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1.75fr) minmax(0, 1fr);
+  gap: 18px;
+}
+
+.decision-intelligence-container .stk {
+  display: grid;
+  gap: 18px;
+  align-content: start;
+}
+
+.decision-intelligence-container .hd {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 16px 10px;
+  gap: 10px;
+}
+
+.decision-intelligence-container .seg {
+  display: flex;
+  border: 1px solid var(--line, #242A35);
+  border-radius: 7px;
+  overflow: hidden;
+}
+
+.decision-intelligence-container .seg button {
+  background: none;
+  border: 0;
+  color: var(--mu, #8B95A5);
+  padding: 4px 11px;
+  font: 500 12px var(--sans, Inter, sans-serif);
+  cursor: pointer;
+}
+
+.decision-intelligence-container .seg button.on {
+  background: var(--s2, #181C24);
+  color: var(--tx, #E8ECF2);
+}
+
+.decision-intelligence-container .scroll {
+  overflow-x: auto;
+}
+
+.decision-intelligence-container table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.decision-intelligence-container th {
+  font: 500 10.5px var(--mono, "JetBrains Mono", monospace);
+  letter-spacing: .08em;
+  color: var(--mu, #8B95A5);
+  text-align: left;
+  padding: 8px 14px;
+  border-top: 1px solid var(--line, #242A35);
+  border-bottom: 1px solid var(--line, #242A35);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.decision-intelligence-container td {
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--line, #242A35);
+  white-space: nowrap;
+}
+
+.decision-intelligence-container tr:last-child td {
+  border-bottom: 0;
+}
+
+.decision-intelligence-container th.r,
+.decision-intelligence-container td.r {
+  text-align: right;
+}
+
+.decision-intelligence-container td.m {
+  font-family: var(--mono, "JetBrains Mono", monospace);
+}
+
+.decision-intelligence-container tr.top td {
+  background: #4C8DFF10;
+}
+
+.decision-intelligence-container tr.inel td {
+  color: var(--mu, #8B95A5);
+}
+
+.decision-intelligence-container th small {
+  display: block;
+  font-size: 10px;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--mu, #8B95A5);
+}
+
+.decision-intelligence-container .rk {
+  color: var(--mu, #8B95A5);
+  font-family: var(--mono, "JetBrains Mono", monospace);
+  width: 34px;
+}
+
+/* Composition bars */
+.decision-intelligence-container .bars {
+  padding: 4px 16px 16px;
+  display: grid;
+  gap: 10px;
+}
+
+.decision-intelligence-container .br {
+  display: grid;
+  grid-template-columns: 60px 1fr 44px;
+  gap: 12px;
+  align-items: center;
+  font-size: 13px;
+}
+
+.decision-intelligence-container .br .t {
+  height: 14px;
+  background: var(--s2, #181C24);
+  border-radius: 3px;
+  display: flex;
+  overflow: hidden;
+}
+
+.decision-intelligence-container .br .t i {
+  display: block;
+  height: 100%;
+}
+
+.decision-intelligence-container .br b {
+  font: 500 12.5px var(--mono, "JetBrains Mono", monospace);
+  text-align: right;
+}
+
+.decision-intelligence-container .lg {
+  display: flex;
+  gap: 16px;
+  padding: 0 16px 14px;
+  color: var(--mu, #8B95A5);
+  font-size: 12px;
+  flex-wrap: wrap;
+}
+
+.decision-intelligence-container .lg span:before {
+  content: "";
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  margin-right: 6px;
+  background: var(--c);
+}
+
+/* Criteria */
+.decision-intelligence-container .crit {
+  padding: 4px 16px 14px;
+  display: grid;
+  gap: 12px;
+}
+
+.decision-intelligence-container .crit div {
+  display: grid;
+  gap: 5px;
+}
+
+.decision-intelligence-container .crit .l {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+}
+
+.decision-intelligence-container .crit .l b {
+  font: 500 12.5px var(--mono, "JetBrains Mono", monospace);
+}
+
+.decision-intelligence-container .crit .w {
+  height: 5px;
+  background: var(--s2, #181C24);
+  border-radius: 3px;
+}
+
+.decision-intelligence-container .crit .w i {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--c);
+}
+
+.decision-intelligence-container .crit small {
+  color: var(--mu, #8B95A5);
+  font-size: 11.5px;
+}
+
+/* Thresholds */
+.decision-intelligence-container .th {
+  padding: 2px 16px 14px;
+  display: grid;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.decision-intelligence-container .th div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+}
+
+/* Supporting evidence */
+.decision-intelligence-container .ev {
+  padding: 0 0 6px;
+}
+
+.decision-intelligence-container .ev div {
+  padding: 9px 16px;
+  border-top: 1px solid var(--line, #242A35);
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  font-size: 13px;
+}
+
+.decision-intelligence-container .ev div span:nth-child(3) {
+  flex: 1;
+}
+
+.decision-intelligence-container .rl {
+  padding: 14px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.decision-intelligence-container .rl a {
+  color: var(--pr, #4C8DFF);
+  font-size: 12.5px;
+  text-decoration: none;
+}
+
+.decision-intelligence-container .note {
+  color: var(--mu, #8B95A5);
+  font-size: 11.5px;
+  margin-top: 20px;
+}
+
+/* Robustness box (.rbb) */
+.decision-intelligence-container .rbb {
+  padding: 0 16px 16px;
+}
+
+.decision-intelligence-container .rbb p {
+  margin: 0 0 10px;
+  color: #C6CEDA;
+  font-size: 13px;
+}
+
+.decision-intelligence-container .sc2 div {
+  display: flex;
+  justify-content: space-between;
+  padding: 7px 0;
+  border-top: 1px solid var(--line, #242A35);
+  font-size: 13px;
+}
+
+.decision-intelligence-container .sc2 span {
+  color: var(--mu, #8B95A5);
+}
+
+.decision-intelligence-container .sc2 b {
+  font: 500 12.5px var(--mono, "JetBrains Mono", monospace);
+}
+
+.decision-intelligence-container .lm2 {
+  display: flex;
+  justify-content: space-between;
+  margin: 8px 0 10px;
+  color: var(--mu, #8B95A5);
+  font-size: 12.5px;
+  border-top: 1px solid var(--line, #242A35);
+  padding-top: 8px;
+}
+
+.decision-intelligence-container .lm2 b {
+  font-family: var(--mono, "JetBrains Mono", monospace);
+  color: var(--tx, #E8ECF2);
+}
+
+.decision-intelligence-container .rbb a {
+  color: var(--pr, #4C8DFF);
+  font-size: 12.5px;
+  text-decoration: none;
+}
+
+/* Approval Card Styles */
+.decision-intelligence-container .appr {
+  padding: 16px 18px;
+  border-left: 3px solid var(--ap, #4C8DFF);
+}
+
+.decision-intelligence-container .appr .ah {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.decision-intelligence-container .appr p {
+  margin: 8px 0 12px;
+  color: #C6CEDA;
+  font-size: 13.5px;
+}
+
+.decision-intelligence-container .appr .ab {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.decision-intelligence-container .apbtn {
+  background: none;
+  border: 1px solid var(--line, #242A35);
+  color: var(--tx, #E8ECF2);
+  border-radius: 7px;
+  padding: 7px 14px;
+  font: 600 13px var(--sans, Inter, sans-serif);
+  cursor: pointer;
+}
+
+.decision-intelligence-container .apbtn:hover {
+  border-color: #3A4658;
+}
+
+.decision-intelligence-container .apbtn.pr {
+  background: var(--pr, #4C8DFF);
+  border-color: var(--pr, #4C8DFF);
+  color: #06101F;
+}
+
+/* Single Responsive Breakpoint @media (max-width: 1180px) */
+@media (max-width: 1180px) {
+  .decision-intelligence-container {
+    padding: 24px 20px;
+  }
+
+  .decision-intelligence-container .cols {
+    grid-template-columns: 1fr;
+  }
+
+  .decision-intelligence-container .rec {
+    grid-template-columns: 1fr;
+  }
+
+  .decision-intelligence-container .side {
+    text-align: left;
+  }
+}

@@ -1,22 +1,40 @@
 from sqlalchemy import inspect
 from sqlalchemy.orm import Session
 from app.schemas.sql_tool import SchemaContext, TableSchema, ColumnSchema, ForeignKeySchema
-from app.models.business_data import Base
+
+EXCLUDED_SYSTEM_TABLES = {
+    "users",
+    "investigations",
+    "investigation_turns",
+    "investigation_reviews",
+    "audit_logs",
+    "alembic_version"
+}
 
 
 def get_database_schema(db: Session) -> SchemaContext:
     """
     Deterministically introspects database tables, columns, data types, primary keys,
-    and foreign keys for future AI agent context.
+    and foreign keys for AI agent context. Supports dynamic uploaded dataset tables.
     """
     bind = db.get_bind()
     inspector = inspect(bind)
     tables: list[TableSchema] = []
 
-    # Introspect target tables defined in Base metadata
-    target_tables = ["customers", "products", "orders", "order_items"]
+    try:
+        all_table_names = inspector.get_table_names()
+    except Exception:
+        all_table_names = ["customers", "products", "orders", "order_items"]
 
-    for table_name in target_tables:
+    # Filter out system/internal tables
+    target_tables = [t for t in all_table_names if t.lower() not in EXCLUDED_SYSTEM_TABLES]
+
+    # Always ensure core business tables appear first if present
+    core_tables = ["customers", "products", "orders", "order_items"]
+    ordered_tables = [t for t in core_tables if t in target_tables]
+    ordered_tables.extend([t for t in target_tables if t not in core_tables])
+
+    for table_name in ordered_tables:
         if not inspector.has_table(table_name):
             continue
 

@@ -233,3 +233,4 @@ To run a complete end-to-end judge demonstration:
 
 1. **Single Database Connection**: SQL tool queries execute against the primary PostgreSQL or SQLite business database. External REST endpoints or third-party web services are not connected.
 2. **Observational Evidence Warning**: Difference-in-Differences (DiD) campaign analysis returns observational statistical association warnings ("Causation not proven") in compliance with evidence guardrails.
+Deployment Link : https://lowerable-september-servomechanically.ngrok-free.dev/

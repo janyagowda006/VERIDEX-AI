@@ -1,22 +1,53 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { RobustnessScenarioChart } from '../visualization/RobustnessScenarioChart.jsx';
 import { HumanReviewPanel } from '../HumanReviewPanel.jsx';
+import { reassessInvestigation } from '../../api/client.js';
 
 /**
  * Dedicated Robustness Analysis View matching the official VERIDEX interactive prototype.
  * Evaluates whether recommendations survive alternate scenario perturbation tests.
- * Presentation-only: displays backend-calculated sensitivity and scenario results.
+ * Displays backend-calculated sensitivity, scenario results, and interactive re-assessment.
  */
 export function RobustnessView({
   data = null,
   onNavigate = null,
   currentUser = null,
-  useMock = true
+  useMock = false,
+  onRobustnessUpdated = null
 }) {
-  const analysis = data?.analysis;
-  const robustness = analysis?.robustness;
+  const [shiftPct, setShiftPct] = useState(10.0);
+  const [reassessing, setReassessing] = useState(false);
+  const [reassessError, setReassessError] = useState(null);
+  const [reassessResult, setReassessResult] = useState(null);
+
+  const activeData = reassessResult ? { ...data, analysis: { ...(data?.analysis || {}), robustness: reassessResult.robustness } } : data;
+  const analysis = activeData?.analysis;
+  const robustness = activeData?.analysis?.robustness;
   const recommendation = analysis?.recommendation;
   const rankings = analysis?.rankings || [];
+  const invId = activeData?.metadata?.investigation_id || activeData?.investigation_id || null;
+
+  const handleReassess = async () => {
+    if (!invId) {
+      setReassessError("Cannot reassess robustness: missing investigation ID.");
+      return;
+    }
+
+    setReassessing(true);
+    setReassessError(null);
+
+    try {
+      const result = await reassessInvestigation(invId, shiftPct, useMock);
+      setReassessResult(result);
+      if (onRobustnessUpdated) {
+        onRobustnessUpdated(result);
+      }
+    } catch (err) {
+      setReassessError(err.detail || err.message || "Failed to execute robustness re-assessment.");
+    } finally {
+      setReassessing(false);
+    }
+  };
 
   if (!robustness) {
     return (
@@ -27,7 +58,7 @@ export function RobustnessView({
           </div>
           <p>No robustness or scenario perturbation assessment is available for the current investigation.</p>
           <p className="summary-desc">
-            Execute an investigation to evaluate parameter perturbations, alternate scenario weighting, and finding stability.
+            Execute a decision intelligence investigation from the workspace to evaluate parameter perturbations, alternate scenario weighting, and finding stability.
           </p>
           <div>
             <button
@@ -46,7 +77,7 @@ export function RobustnessView({
   const topCandidate = rankings[0]?.region
     || rankings[0]?.candidate
     || recommendation?.action_title?.replace(/^Prioritize\s+/i, '')
-    || 'North';
+    || 'Leading Candidate';
 
   const status = robustness.status || 'STABLE';
   const statusBadgeClass = status === 'STABLE'
@@ -64,7 +95,6 @@ export function RobustnessView({
   const baseline = robustness.baseline_scenario;
   const alternates = robustness.alternate_scenarios || [];
 
-  // What this means guidance based on deterministic status
   const interpretationText = status === 'STABLE'
     ? 'You can act on this recommendation. Conclusions stay the same across all evaluated alternate assumptions.'
     : status === 'SENSITIVE'
@@ -97,24 +127,83 @@ export function RobustnessView({
       {/* Top Heading */}
       <div className="robustness-view-header">
         <div>
-          <h1 className="robustness-view-title">Robustness Analysis</h1>
+          <h1 className="robustness-view-title">Robustness & Sensitivity Analysis</h1>
           <p className="robustness-view-subtitle">
-            Does the recommendation survive different assumptions and scenario perturbations?
+            Deterministic stress-testing: does the recommendation survive alternate scenario perturbations?
           </p>
         </div>
       </div>
 
+      {/* Interactive Re-assessment Control Bar */}
+      {invId && (
+        <div className="card pad-card" style={{ marginBottom: '1.25rem' }}>
+          <div className="card-header-row">
+            <div>
+              <span className="cap-label">Dynamic Stress Testing</span>
+              <h3 style={{ margin: '0.2rem 0', fontSize: '1.05rem' }}>Scenario Perturbation Threshold</h3>
+              <p className="summary-desc" style={{ margin: 0 }}>
+                Re-evaluate candidate rankings under synthetic parameter shifts (POST /api/investigations/{'{id}'}/reassess).
+              </p>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+              <div className="seg-control" role="group" aria-label="Perturbation Shift Percentage">
+                {[5.0, 10.0, 15.0, 20.0, 25.0].map((pct) => (
+                  <button
+                    key={pct}
+                    type="button"
+                    className={`seg-btn ${shiftPct === pct ? 'active' : ''}`}
+                    onClick={() => setShiftPct(pct)}
+                    disabled={reassessing}
+                  >
+                    ±{pct}%
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={handleReassess}
+                disabled={reassessing}
+              >
+                {reassessing ? (
+                  <span className="btn-loading-content">
+                    <span className="btn-spinner" aria-hidden="true"></span>
+                    <span>Reassessing...</span>
+                  </span>
+                ) : (
+                  <span>Re-evaluate Robustness</span>
+                )}
+              </button>
+            </div>
+          </div>
+          {reassessError && (
+            <div className="review-message message-error" style={{ marginTop: '0.75rem' }}>
+              <span className="msg-icon" aria-hidden="true">⚠️</span>
+              <span>{reassessError}</span>
+            </div>
+          )}
+          {reassessResult && (
+            <div className="review-message message-success" style={{ marginTop: '0.75rem' }}>
+              <span className="msg-icon" aria-hidden="true">✓</span>
+              <span>
+                Robustness re-assessed at ±{shiftPct}% perturbation: status is <strong>{reassessResult.robustness?.status}</strong>.
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Robustness Status Hero Card */}
       <div className={`card robustness-hero-status-card status-border-${status.toLowerCase()}`}>
         <div className="status-hero-main">
-          <span className="cap-label">Robustness check</span>
+          <span className="cap-label">Deterministic Robustness Check</span>
           <div className={`status-hero-label text-${status.toLowerCase()}`}>
             {statusLabel}
           </div>
           <p className="status-hero-explanation">{robustness.explanation}</p>
           {baseline?.result_summary?.lead_margin_percent !== undefined && (
             <div className="status-hero-metric-note">
-              Lead margin {baseline.result_summary.lead_margin_percent}% · Minimum required 5.0%
+              Baseline Lead Margin: <strong>{baseline.result_summary.lead_margin_percent}%</strong> · Required Stability Threshold: <strong>5.0%</strong>
             </div>
           )}
         </div>
@@ -122,12 +211,16 @@ export function RobustnessView({
         {/* Baseline vs Scenario Comparison Box */}
         <div className="status-comparison-box">
           <div className="comparison-box-item">
-            <span className="cap-label">Baseline</span>
+            <span className="cap-label">
+              <span className="badge badge-platform" style={{ fontSize: '0.65rem', marginRight: '4px' }}>OBSERVED</span>
+              Baseline
+            </span>
             <strong>{topCandidate} #1</strong>
           </div>
           <span className="comparison-arrow" aria-hidden="true">→</span>
           <div className={`comparison-box-item ${status === 'SENSITIVE' ? 'item-sensitive' : ''}`}>
             <span className="cap-label">
+              <span className="badge badge-platform" style={{ fontSize: '0.65rem', marginRight: '4px' }}>SIMULATED</span>
               {alternates.length > 0 ? `${alternates.length} alternate scenario(s)` : 'Scenarios'}
             </span>
             <strong className={status === 'SENSITIVE' ? 'text-warn' : 'text-ok'}>
@@ -140,16 +233,16 @@ export function RobustnessView({
       {/* Human Review & Approval Integration */}
       <div className="decision-approval-container">
         <HumanReviewPanel
-          key={data?.metadata?.investigation_id || 'inv_active'}
-          investigationId={data?.metadata?.investigation_id || 'inv_active'}
+          key={invId || 'inv_active'}
+          investigationId={invId || 'inv_active'}
           investigationStatus={
-            data?.status || (status === 'SENSITIVE' ? 'REQUIRES_REVIEW' : 'COMPLETED')
+            activeData?.status || (status === 'SENSITIVE' ? 'REQUIRES_REVIEW' : 'COMPLETED')
           }
-          latestReview={data?.latest_review || null}
-          reviewCount={data?.review_count || 0}
+          latestReview={activeData?.latest_review || null}
+          reviewCount={activeData?.review_count || 0}
           useMock={useMock}
           currentUser={currentUser}
-          ownerId={data?.owner_id || data?.metadata?.owner_id || 'usr_analyst_01'}
+          ownerId={activeData?.owner_id || activeData?.metadata?.owner_id || 'usr_analyst_01'}
         />
       </div>
 
@@ -161,7 +254,7 @@ export function RobustnessView({
         <span className={`status-badge ${statusBadgeClass}`}>{statusLabel}</span>
       </div>
 
-      {/* Phase 9.5I Scenario Chart */}
+      {/* Scenario Chart */}
       <div style={{ marginBottom: '1.5rem' }}>
         <RobustnessScenarioChart
           baselineScenario={baseline}
@@ -170,7 +263,7 @@ export function RobustnessView({
         />
       </div>
 
-      {/* Prototype Scenario Detail Cards */}
+      {/* Scenario Detail Cards */}
       <div className="scenarios-cards-stack">
         {alternates.map((alt, idx) => {
           const isChanged = alt.is_recommendation_changed;
@@ -183,7 +276,10 @@ export function RobustnessView({
             <div key={idx} className="card scenario-detail-card">
               <div className="scenario-detail-header">
                 <div>
-                  <span className="cap-label">Scenario #{idx + 1}</span>
+                  <span className="cap-label">
+                    <span className="badge badge-platform" style={{ fontSize: '0.65rem', marginRight: '6px' }}>SIMULATED</span>
+                    Scenario #{idx + 1}
+                  </span>
                   <h3 className="scenario-detail-title">
                     {alt.scenario_name ? alt.scenario_name.replace(/_/g, ' ') : `Alternate Scenario #${idx + 1}`}
                   </h3>
@@ -241,33 +337,6 @@ export function RobustnessView({
             </div>
           );
         })}
-      </div>
-
-      {/* Outlier Sensitivity Section */}
-      <div className="outlier-sensitivity-grid">
-        <div className="card pad-card">
-          <span className="cap-label">Outlier sensitivity</span>
-          <h3>Data perturbation test</h3>
-          <p className="summary-desc">
-            Excluding boundary transactions or top-margin outliers preserves {topCandidate} as the leading recommendation.
-          </p>
-          <div className="meta-kv-grid">
-            <span>Result</span>
-            <strong>{topCandidate} #1 · Unchanged</strong>
-          </div>
-        </div>
-
-        <div className="card pad-card">
-          <span className="cap-label">Metric stability</span>
-          <h3>Perturbation boundary</h3>
-          <p className="summary-desc">
-            Criteria evaluation scores remain within acceptable variance across tested perturbations.
-          </p>
-          <div className="meta-kv-grid">
-            <span>Variance</span>
-            <strong>&lt; 5.0% lead gap</strong>
-          </div>
-        </div>
       </div>
 
       {/* "What this means" Action Callout Box */}

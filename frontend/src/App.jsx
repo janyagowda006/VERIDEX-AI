@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { askQuestion, getInvestigationDetail, getMe } from './api/client.js';
+import { askQuestion, getInvestigationDetail } from './api/client.js';
+import { AuthProvider } from './context/AuthContext.jsx';
+import { useAuth } from './context/useAuth.js';
+import { LoginModal } from './components/LoginModal.jsx';
 import { Sidebar } from './components/Sidebar.jsx';
 import { ThemeToggle } from './components/ThemeToggle.jsx';
 import { InvestigationHistoryDrawer } from './components/InvestigationHistoryDrawer.jsx';
@@ -10,40 +13,26 @@ import { DecisionView } from './components/views/DecisionView.jsx';
 import { RobustnessView } from './components/views/RobustnessView.jsx';
 import { EvidenceExplorerView } from './components/views/EvidenceExplorerView.jsx';
 import { InvestigationDetailView } from './components/views/InvestigationDetailView.jsx';
+import { HistoryView } from './components/views/HistoryView.jsx';
+import { SourcesView } from './components/views/SourcesView.jsx';
 import './App.css';
 
-function App() {
-  const [activeView, setActiveView] = useState('investigations');
+function AppWorkspace() {
+  const { currentUser, isAuthenticated, isLoading: authLoading, login, logout, authError } = useAuth();
+
+  const [activeView, setActiveView] = useState('overview');
   const [data, setData] = useState(null);
   const [activeInvestigationId, setActiveInvestigationId] = useState(null);
   const [turns, setTurns] = useState([]);
   const [activeTurnNumber, setActiveTurnNumber] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [useMock, setUseMock] = useState(true);
+
+  // Live vs Mock mode: Live by default!
+  const [useMock, setUseMock] = useState(false);
   const [selectedEvidenceId, setSelectedEvidenceId] = useState(null);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isAnalyticsOpen, setIsAnalyticsOpen] = useState(false);
-
-  // Enterprise Auth & RBAC State
-  const [userRole, setUserRole] = useState('ANALYST');
-  const [currentUser, setCurrentUser] = useState({
-    user_id: "usr_analyst_01",
-    email: "analyst@veridex.internal",
-    full_name: "Lead Analyst",
-    role: "ANALYST",
-    is_active: true
-  });
-
-  const handleSwitchRole = async (newRole) => {
-    setUserRole(newRole);
-    try {
-      const u = await getMe(useMock, newRole);
-      if (u) setCurrentUser(u);
-    } catch {
-      // fallback
-    }
-  };
 
   // Theme state: respects localStorage preference, fallback to system preference
   const [theme, setTheme] = useState(() => {
@@ -54,7 +43,7 @@ function App() {
         return 'dark';
       }
     } catch {
-      // safe fallback for restricted sandbox environments
+      // safe fallback
     }
     return 'dark';
   });
@@ -95,7 +84,7 @@ function App() {
         setError(res.error);
       }
 
-      const targetInvId = res.investigation_id || res.metadata?.investigation_id || invIdToSend || "inv_mock_123456";
+      const targetInvId = res.investigation_id || res.metadata?.investigation_id || invIdToSend || "inv_active";
       const isContinuation = Boolean(!isNewInvestigation && invIdToSend && targetInvId === invIdToSend);
       const nextTurnNum = isContinuation ? turns.length + 1 : 1;
 
@@ -123,16 +112,11 @@ function App() {
       setData(res);
       setActiveView('investigations');
     } catch (err) {
-      setError(err.message || "Failed to execute investigation request.");
+      setError(err.detail || err.message || "Failed to execute investigation request.");
     } finally {
       setLoading(false);
     }
   }, [activeInvestigationId, turns, useMock]);
-
-  // Load initial investigation on mount
-  useEffect(() => {
-    handleRunInvestigation("What is our gross revenue by region?", true, true);
-  }, [handleRunInvestigation]);
 
   const handleSelectHistoricalInvestigation = async (invId) => {
     setSelectedEvidenceId(null);
@@ -206,9 +190,9 @@ function App() {
       setActiveInvestigationId(detail.investigation_id);
       setActiveTurnNumber(turnItems[turnItems.length - 1].turn_number);
       setData(combinedData);
-      setActiveView('investigations');
+      setActiveView('detail');
     } catch (err) {
-      setError(err.message || "Failed to load historical investigation details.");
+      setError(err.detail || err.message || "Failed to load historical investigation details.");
     } finally {
       setLoading(false);
     }
@@ -227,15 +211,36 @@ function App() {
   // View titles for header breadcrumbs
   const VIEW_TITLES = {
     overview: 'Overview',
-    investigations: 'Investigations',
-    sources: 'Data Sources',
+    investigations: 'Investigations Workspace',
+    sources: 'Data Sources & Schema',
     evidence: 'Evidence Explorer',
     decisions: 'Decision Intelligence',
     robustness: 'Robustness Analysis',
-    detail: 'Investigation Audit',
+    detail: 'Investigation Audit Detail',
     history: 'Investigation History',
-    settings: 'Settings'
+    settings: 'Security & Settings'
   };
+
+  // If auth is loading on initial startup
+  if (authLoading) {
+    return (
+      <div className="history-state-container" style={{ minHeight: '100vh' }}>
+        <span className="btn-spinner" aria-hidden="true"></span>
+        <span>Initializing VERIDEX Decision Intelligence Platform...</span>
+      </div>
+    );
+  }
+
+  // If user is not authenticated, show real Login Screen
+  if (!isAuthenticated) {
+    return (
+      <LoginModal
+        isOpen={true}
+        onLogin={login}
+        initialError={authError}
+      />
+    );
+  }
 
   return (
     <div className="app-shell">
@@ -245,6 +250,7 @@ function App() {
         onSelectView={setActiveView}
         currentUser={currentUser}
         workspaceName="Acme Retail"
+        onLogout={logout}
       />
 
       {/* Main Viewport Container */}
@@ -299,28 +305,30 @@ function App() {
 
             <div className="header-badges">
               <span className="badge badge-platform">AI Build Challenge 2026</span>
-              <span className={`mode-badge ${useMock ? 'mock' : 'live'}`}>
+              <button
+                type="button"
+                className={`mode-badge ${useMock ? 'mock' : 'live'}`}
+                onClick={() => setUseMock(!useMock)}
+                title="Toggle between Live Backend Mode and Offline Mock Mode"
+              >
                 <span className="mode-dot" aria-hidden="true">●</span>
-                {useMock ? 'Mock API Mode' : 'Live API Mode'}
-              </span>
+                {useMock ? 'Mock Mode' : 'Live API Mode'}
+              </button>
             </div>
 
-            {/* Dev Role Switcher */}
+            {/* Authenticated User & Role Profile */}
             <div className="role-switcher-group" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <select
-                className="role-switcher-select"
-                value={userRole}
-                onChange={(e) => handleSwitchRole(e.target.value)}
-                aria-label="Switch User Role for Dev Testing"
-              >
-                <option value="ANALYST">Role: ANALYST (Lead Analyst)</option>
-                <option value="REVIEWER">Role: REVIEWER (Senior Reviewer)</option>
-                <option value="AUDITOR">Role: AUDITOR (Compliance Auditor)</option>
-                <option value="ADMIN">Role: ADMIN (System Admin)</option>
-              </select>
               <span className="user-role-badge">
-                👤 {currentUser?.full_name || userRole}
+                👤 {currentUser?.full_name || currentUser?.email} (<strong>{currentUser?.role || 'ANALYST'}</strong>)
               </span>
+              <button
+                type="button"
+                className="btn btn-outline btn-xs"
+                onClick={logout}
+                title="Sign out of active session"
+              >
+                Sign Out
+              </button>
             </div>
 
             <ThemeToggle theme={theme} onToggle={handleToggleTheme} />
@@ -356,7 +364,9 @@ function App() {
               useMock={useMock}
               onToggleMock={(val) => {
                 setUseMock(val);
-                handleRunInvestigation(data?.question || "What is our gross revenue by region?", val, true);
+                if (data?.question) {
+                  handleRunInvestigation(data.question, val, true);
+                }
               }}
               selectedEvidenceId={selectedEvidenceId}
               onSelectEvidence={setSelectedEvidenceId}
@@ -365,43 +375,15 @@ function App() {
             />
           )}
 
-          {/* VIEW: DATA SOURCES */}
+          {/* VIEW: DATA SOURCES & SCHEMA */}
           {activeView === 'sources' && (
-            <div className="view-shell sources-view-shell">
-              <div className="card safe-access-banner">
-                <span className="safe-badge">RO</span>
-                <div>
-                  <strong>Read-only access guaranteed.</strong>
-                  <span> VERIDEX runs safe read-only SQL queries. It never alters database state or inserts records.</span>
-                </div>
-              </div>
-              <div className="card sources-table-card">
-                <div className="card-header-row">
-                  <h2 className="section-heading">Connected Data Sources</h2>
-                </div>
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Source Name</th>
-                      <th>Type</th>
-                      <th>Access</th>
-                      <th>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td><strong>Operations Database</strong></td>
-                      <td>SQL Database (PostgreSQL / SQLite)</td>
-                      <td>Read-Only Safe Mode</td>
-                      <td><span className="status-badge status-badge-ok">Connected</span></td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
+            <SourcesView
+              currentUser={currentUser}
+              onNavigate={setActiveView}
+            />
           )}
 
-          {/* VIEW: EVIDENCE (Dedicated Prototype Evidence Explorer) */}
+          {/* VIEW: EVIDENCE (Dedicated Evidence Explorer) */}
           {activeView === 'evidence' && (
             <EvidenceExplorerView
               evidence={data?.evidence || []}
@@ -416,7 +398,7 @@ function App() {
             />
           )}
 
-          {/* VIEW: DECISIONS (Dedicated Prototype Decision Intelligence) */}
+          {/* VIEW: DECISIONS (Dedicated Decision Intelligence) */}
           {activeView === 'decisions' && (
             <DecisionView
               data={data}
@@ -428,17 +410,28 @@ function App() {
             />
           )}
 
-          {/* VIEW: ROBUSTNESS (Dedicated Prototype Robustness Analysis) */}
+          {/* VIEW: ROBUSTNESS (Dedicated Robustness Analysis) */}
           {activeView === 'robustness' && (
             <RobustnessView
               data={data}
               onNavigate={setActiveView}
               currentUser={currentUser}
               useMock={useMock}
+              onRobustnessUpdated={(reassessed) => {
+                if (data) {
+                  setData((prev) => ({
+                    ...prev,
+                    analysis: {
+                      ...(prev?.analysis || {}),
+                      robustness: reassessed.robustness
+                    }
+                  }));
+                }
+              }}
             />
           )}
 
-          {/* VIEW: DETAIL (Dedicated Prototype Investigation Audit Detail) */}
+          {/* VIEW: DETAIL (Dedicated Investigation Audit Detail) */}
           {activeView === 'detail' && (
             <InvestigationDetailView
               data={data}
@@ -449,59 +442,14 @@ function App() {
             />
           )}
 
-          {/* VIEW: HISTORY */}
+          {/* VIEW: HISTORY (Real Investigation Audit History) */}
           {activeView === 'history' && (
-            <div className="view-shell history-view-shell">
-              <div className="card placeholder-card">
-                <div className="card-header-row">
-                  <h2 className="section-heading">Investigation History</h2>
-                  <button
-                    type="button"
-                    className="btn btn-primary btn-sm"
-                    onClick={() => setIsHistoryOpen(true)}
-                  >
-                    Open History Drawer 📜
-                  </button>
-                </div>
-                <p>Browse past investigations, filter by review status or robustness classification, and review audit traces.</p>
-                {turns.length > 0 && (
-                  <div style={{ marginTop: '1rem' }}>
-                    <h4>Current Session Investigations ({turns.length} Turn{turns.length > 1 ? 's' : ''})</h4>
-                    <table className="data-table" style={{ marginTop: '0.5rem' }}>
-                      <thead>
-                        <tr>
-                          <th>Turn</th>
-                          <th>Question</th>
-                          <th>Evidence</th>
-                          <th>Action</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {turns.map((t) => (
-                          <tr key={t.turn_id}>
-                            <td><strong>#{t.turn_number}</strong></td>
-                            <td>{t.question}</td>
-                            <td>{t.evidence_count} items</td>
-                            <td>
-                              <button
-                                type="button"
-                                className="btn btn-outline btn-sm"
-                                onClick={() => {
-                                  handleSelectTurn(t.turn_number);
-                                  setActiveView('investigations');
-                                }}
-                              >
-                                View
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            </div>
+            <HistoryView
+              onSelectInvestigation={handleSelectHistoricalInvestigation}
+              onNavigate={setActiveView}
+              currentUser={currentUser}
+              useMock={useMock}
+            />
           )}
 
           {/* VIEW: SETTINGS */}
@@ -510,19 +458,28 @@ function App() {
               <div className="card settings-card">
                 <h2 className="section-heading">System & Security Settings</h2>
                 <div className="settings-section">
-                  <h3>Workspace Profile</h3>
+                  <h3>Active User & Security Context</h3>
                   <div className="setting-row">
-                    <span>Workspace Name:</span>
-                    <strong>Acme Retail</strong>
+                    <span>Authenticated User:</span>
+                    <strong>{currentUser?.full_name} ({currentUser?.email})</strong>
                   </div>
                   <div className="setting-row">
-                    <span>Active User:</span>
-                    <strong>{currentUser?.full_name || 'Gagandeep'} ({currentUser?.role || 'ANALYST'})</strong>
+                    <span>Enterprise Role:</span>
+                    <span className="badge badge-platform">{currentUser?.role}</span>
+                  </div>
+                  <div className="setting-row">
+                    <span>User Identifier:</span>
+                    <code>{currentUser?.user_id}</code>
+                  </div>
+                  <div className="setting-row" style={{ marginTop: '0.5rem' }}>
+                    <button type="button" className="btn btn-outline btn-sm" onClick={logout}>
+                      Sign Out of VERIDEX
+                    </button>
                   </div>
                 </div>
 
                 <div className="settings-section" style={{ marginTop: '1.5rem' }}>
-                  <h3>Security & Enforcement</h3>
+                  <h3>Security & Enforcement Guarantees</h3>
                   <div className="setting-row">
                     <span>Read-Only SQL Execution:</span>
                     <span className="status-badge status-badge-ok">✓ Enforced (SQLGlot AST validation)</span>
@@ -536,8 +493,12 @@ function App() {
                     <span className="status-badge status-badge-ok">✓ Enforced (SHA-256 query hashing)</span>
                   </div>
                   <div className="setting-row">
-                    <span>Self-Review Protection:</span>
-                    <span className="status-badge status-badge-ok">✓ Active (Creator cannot approve)</span>
+                    <span>Self-Review Separation of Duties:</span>
+                    <span className="status-badge status-badge-ok">✓ Enforced (Investigator cannot review own thread)</span>
+                  </div>
+                  <div className="setting-row">
+                    <span>Multi-turn IDOR Guard:</span>
+                    <span className="status-badge status-badge-ok">✓ Enforced (Thread ownership validation)</span>
                   </div>
                 </div>
 
@@ -558,7 +519,7 @@ function App() {
           <p>VERIDEX — Traceable Evidence • Deterministic Calculations • Human Decisions</p>
         </footer>
 
-        {/* Drawers */}
+        {/* Slide-over Drawers */}
         <InvestigationHistoryDrawer
           isOpen={isHistoryOpen}
           onClose={() => setIsHistoryOpen(false)}
@@ -574,6 +535,14 @@ function App() {
         />
       </div>
     </div>
+  );
+}
+
+export function App() {
+  return (
+    <AuthProvider>
+      <AppWorkspace />
+    </AuthProvider>
   );
 }
 

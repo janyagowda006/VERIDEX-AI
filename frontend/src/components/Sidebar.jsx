@@ -89,22 +89,27 @@ const NAV_ITEMS = [
 ];
 
 /**
- * Persistent sidebar component matching the VERIDEX official prototype layout.
+ * Persistent sidebar component matching the VERIDEX official layout.
  *
  * @param {string} activeView - The currently active view key.
  * @param {Function} onSelectView - Handler when a navigation item is selected.
- * @param {Object} currentUser - Current authenticated user (from Phase 9.5H RBAC).
+ * @param {Object} currentUser - Current authenticated user (from real backend auth).
  * @param {string} workspaceName - Current workspace name (e.g. "Acme Retail").
+ * @param {Function} onLogout - Handler for user logout.
  */
 export function Sidebar({
   activeView = 'investigations',
   onSelectView,
   currentUser = null,
-  workspaceName = 'Acme Retail'
+  workspaceName = 'Acme Retail',
+  onLogout = null
 }) {
   const userInitials = currentUser?.full_name
     ? currentUser.full_name.charAt(0).toUpperCase()
-    : 'G';
+    : (currentUser?.role ? currentUser.role.charAt(0).toUpperCase() : 'U');
+
+  const userDisplayName = currentUser?.full_name
+    || (currentUser?.email ? currentUser.email.split('@')[0] : 'Analyst');
 
   const userRoleDisplay = currentUser?.role
     ? currentUser.role.charAt(0).toUpperCase() + currentUser.role.slice(1).toLowerCase()
@@ -157,12 +162,24 @@ export function Sidebar({
             <small className="ws-sub">Workspace</small>
           </div>
         </div>
-        <div className="sidebar-ws-item" title={`User: ${currentUser?.full_name || 'Gagandeep'} (${userRoleDisplay})`}>
+
+        <div className="sidebar-ws-item" title={`User: ${userDisplayName} (${userRoleDisplay})`}>
           <span className="sidebar-avatar avatar-user">{userInitials}</span>
           <div className="sidebar-ws-text">
-            <span className="ws-name">{currentUser?.full_name || 'Gagandeep'}</span>
+            <span className="ws-name">{userDisplayName}</span>
             <small className="ws-sub">{userRoleDisplay}</small>
           </div>
+          {onLogout && (
+            <button
+              type="button"
+              className="sidebar-logout-icon-btn"
+              onClick={onLogout}
+              title="Sign out of VERIDEX"
+              aria-label="Sign out"
+            >
+              ⎋
+            </button>
+          )}
         </div>
       </div>
     </aside>

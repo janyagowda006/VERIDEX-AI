@@ -1,19 +1,22 @@
 import React, { useState } from 'react';
 import { HumanReviewPanel } from '../HumanReviewPanel.jsx';
+import { downloadInvestigationReport } from '../../api/client.js';
 
 /**
  * Dedicated Investigation Audit & Detail View matching the official VERIDEX interactive prototype.
  * Full audit record containing tool calls, claims-evidence lineage, calculations, decision ranking,
- * robustness assessment, and human approval trace with a sticky TOC jump rail.
+ * robustness assessment, human approval trace, and export capabilities.
  */
 export function InvestigationDetailView({
   data = null,
   onNavigate = null,
   onSelectEvidence = null,
   currentUser = null,
-  useMock = true
+  useMock = false
 }) {
   const [activeToc, setActiveToc] = useState('summary');
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState(null);
 
   if (!data) {
     return (
@@ -58,11 +61,43 @@ export function InvestigationDetailView({
   const robustnessBadgeClass = robustnessStatus === 'STABLE' ? 'b-ok' : robustnessStatus === 'SENSITIVE' ? 'b-warn' : 'b-neu';
   const robustnessLabel = robustnessStatus === 'STABLE' ? '✓ Stable' : robustnessStatus === 'SENSITIVE' ? '◐ Sensitive' : '○ Insufficient';
 
-  const totalDuration = ((toolCalls.reduce((acc, t) => acc + (t.result?.metadata?.execution_time_ms || 14.2), 0)) / 1000).toFixed(1);
+  const executionTimeMs = data.execution_time_ms ?? (toolCalls.reduce((acc, t) => acc + (t.result?.metadata?.execution_time_ms || 14.2), 0));
+  const totalDuration = (executionTimeMs / 1000).toFixed(2);
+
+  const formatTimestamp = (iso) => {
+    if (!iso) return 'Recent Investigation';
+    try {
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return iso;
+      return d.toLocaleString(undefined, {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch {
+      return iso;
+    }
+  };
+
+  const formattedTimestamp = formatTimestamp(data.created_at || data.metadata?.created_at || data.metadata?.timestamp);
+
+  const handleExport = async (format) => {
+    setExporting(true);
+    setExportError(null);
+    try {
+      await downloadInvestigationReport(invId, format, useMock);
+    } catch (err) {
+      setExportError(err.detail || err.message || 'Export failed.');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   return (
     <div className="view-shell detail-view-shell" role="region" aria-label="Investigation Detail Audit">
-      {/* 3-column / 2-column Detail Shell: Main Content + Sticky Right TOC */}
+      {/* 2-column Detail Shell: Main Content + Sticky Right TOC */}
       <div className="detail-layout-grid">
         <div className="detail-main-column">
           {/* Breadcrumb Navigation */}
@@ -82,22 +117,49 @@ export function InvestigationDetailView({
           <div className="detail-header-row">
             <h1 className="detail-view-title">{data.question}</h1>
             <div className="detail-actions-group">
+              <div className="export-btn-group" role="group" aria-label="Export audit report">
+                <button
+                  type="button"
+                  className="btn btn-outline btn-sm"
+                  onClick={() => handleExport('json')}
+                  disabled={exporting}
+                  title="Download complete JSON audit package"
+                >
+                  Export JSON
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-outline btn-sm"
+                  onClick={() => handleExport('markdown')}
+                  disabled={exporting}
+                  title="Download Markdown audit report"
+                >
+                  Export Markdown
+                </button>
+              </div>
               <button
                 type="button"
-                className="btn btn-outline btn-sm"
+                className="btn btn-primary btn-sm"
                 onClick={() => onNavigate && onNavigate('investigations')}
               >
-                Ask follow-up →
+                Ask Follow-up →
               </button>
             </div>
           </div>
 
+          {exportError && (
+            <div className="review-message message-error" style={{ marginBottom: '1rem' }}>
+              <span className="msg-icon" aria-hidden="true">⚠️</span>
+              <span>{exportError}</span>
+            </div>
+          )}
+
           {/* Meta Badges Row */}
           <div className="detail-meta-row">
-            <span>Today, 14:12</span>
-            <span>Duration {totalDuration} s</span>
-            <span>{toolCalls.length || 1} tool calls</span>
-            <span>{evidence.length} evidence</span>
+            <span>📅 {formattedTimestamp}</span>
+            <span>⏱️ Duration {totalDuration} s</span>
+            <span>🔧 {toolCalls.length} tool call{toolCalls.length !== 1 ? 's' : ''}</span>
+            <span>📄 {evidence.length} evidence item{evidence.length !== 1 ? 's' : ''}</span>
             <span className={`status-badge ${robustnessBadgeClass}`}>{robustnessLabel}</span>
           </div>
 
@@ -111,44 +173,55 @@ export function InvestigationDetailView({
           {/* Section 2: Investigation Timeline & Tool Execution */}
           <details className="card detail-section-accordion" id="timeline" open>
             <summary className="detail-accordion-summary">
-              <h3>Investigation timeline</h3>
-              <span className="summary-count-tag">{toolCalls.length || 1} step(s) · {totalDuration} s</span>
+              <h3>Investigation Execution Timeline</h3>
+              <span className="summary-count-tag">{toolCalls.length} step(s) · {totalDuration} s</span>
             </summary>
             <div className="detail-accordion-body">
               {toolCalls.length > 0 ? (
-                toolCalls.map((call, idx) => (
-                  <div key={idx} className="timeline-rail-step">
-                    <div className="rail-indicator-col">
-                      <span className="rail-dot" />
-                      {idx < toolCalls.length - 1 && <span className="rail-line" />}
-                    </div>
-                    <div className="rail-step-content">
-                      <div className="step-headline-row">
-                        <code>{call.tool_name || 'sql_query'}</code>
-                        <span className="step-desc-text">
-                          {call.result?.description || call.arguments?.query || 'safe read-only execution'}
-                        </span>
-                        <span className="step-duration-text">
-                          {((call.result?.metadata?.execution_time_ms || 14.2) / 1000).toFixed(1)}s
-                        </span>
+                toolCalls.map((call, idx) => {
+                  const isFailed = call.result?.success === false || Boolean(call.result?.error);
+                  return (
+                    <div key={idx} className="timeline-rail-step">
+                      <div className="rail-indicator-col">
+                        <span className={`rail-dot ${isFailed ? 'rail-dot-fail' : ''}`} />
+                        {idx < toolCalls.length - 1 && <span className="rail-line" />}
                       </div>
-                      {call.result?.sql && (
-                        <details className="step-sql-accordion" open>
-                          <summary>SQL and execution ▾</summary>
-                          <pre className="drawer-code-pre"><code>{call.result.sql}</code></pre>
-                          <div className="drawer-meta-grid" style={{ marginTop: '8px' }}>
-                            <span>query_hash</span>
-                            <span className="hash-code">{call.result.metadata?.query_hash?.substring(0, 16) || '8f9a2b1c4e7d3f5a'}...</span>
-                            <span>mode</span>
-                            <span>read-only</span>
+                      <div className="rail-step-content">
+                        <div className="step-headline-row">
+                          <code>{call.tool_name || 'sql_query'}</code>
+                          <span className="step-desc-text">
+                            {call.result?.description || call.arguments?.query || 'safe read-only execution'}
+                          </span>
+                          <span className="step-duration-text">
+                            {((call.result?.metadata?.execution_time_ms || 14.2) / 1000).toFixed(2)}s
+                          </span>
+                        </div>
+                        {isFailed && (
+                          <div className="review-message message-error" style={{ marginTop: '6px' }}>
+                            <span className="msg-icon" aria-hidden="true">⚠️</span>
+                            <span>Tool Execution Error: {call.result?.error || 'Execution halted.'}</span>
                           </div>
-                        </details>
-                      )}
+                        )}
+                        {call.result?.sql && (
+                          <details className="step-sql-accordion" open>
+                            <summary>SQL and execution ▾</summary>
+                            <pre className="drawer-code-pre"><code>{call.result.sql}</code></pre>
+                            <div className="drawer-meta-grid" style={{ marginTop: '8px' }}>
+                              <span>query_hash</span>
+                              <span className="hash-code">{call.result.metadata?.query_hash?.substring(0, 16) || '8f9a2b1c4e7d3f5a'}...</span>
+                              <span>mode</span>
+                              <span>read-only (SQLGlot AST verified)</span>
+                              <span>rows_returned</span>
+                              <span>{call.result.metadata?.row_count ?? (call.result.relevant_rows ? call.result.relevant_rows.length : 0)}</span>
+                            </div>
+                          </details>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               ) : (
-                <p className="summary-desc">Executed safe schema inspection and deterministic SQL analysis pipeline.</p>
+                <p className="summary-desc">No tool execution steps recorded for this turn.</p>
               )}
             </div>
           </details>
@@ -156,8 +229,8 @@ export function InvestigationDetailView({
           {/* Section 3: Claims -> Evidence Lineage */}
           <details className="card detail-section-accordion" id="claims" open>
             <summary className="detail-accordion-summary">
-              <h3>Claims → evidence</h3>
-              <span className="summary-count-tag">{claims.length} supported</span>
+              <h3>Claims → Evidence Provenance Lineage</h3>
+              <span className="summary-count-tag">{claims.length} claims supported</span>
             </summary>
             <div className="detail-accordion-body">
               <div className="claims-evidence-map-list">
@@ -198,7 +271,7 @@ export function InvestigationDetailView({
           {/* Section 4: Evidence Catalog */}
           <details className="card detail-section-accordion" id="evidence" open>
             <summary className="detail-accordion-summary">
-              <h3>Evidence</h3>
+              <h3>Evidence Catalog</h3>
               <span className="summary-count-tag">{evidence.length} items</span>
             </summary>
             <div className="detail-accordion-body table-responsive-wrapper">
@@ -250,7 +323,7 @@ export function InvestigationDetailView({
           {/* Section 5: Derived Calculations */}
           <details className="card detail-section-accordion" id="derived" open>
             <summary className="detail-accordion-summary">
-              <h3>Derived calculations</h3>
+              <h3>Deterministic Arithmetic Calculations</h3>
               <span className="summary-count-tag">{derivedEv.length} formula(s)</span>
             </summary>
             <div className="detail-accordion-body">
@@ -259,14 +332,12 @@ export function InvestigationDetailView({
                   <div key={item.evidence_id} style={{ marginBottom: '10px' }}>
                     <span className="cap-label">{item.evidence_id} · {item.calculation?.formula_name || 'Calculation'}</span>
                     <pre className="drawer-code-pre">
-                      <code>{item.calculation?.formula || 'percentage_change = ((North - South) / South) * 100'}</code>
+                      <code>{item.calculation?.formula || 'percentage_change = ((v1 - v2) / v2) * 100'}</code>
                     </pre>
                   </div>
                 ))
               ) : (
-                <pre className="drawer-code-pre">
-                  <code>margin_delta = north_revenue - south_revenue = 1,200,000 - 950,000 = 250,000</code>
-                </pre>
+                <p className="summary-desc">No derived arithmetic evidence generated for this investigation.</p>
               )}
             </div>
           </details>
@@ -275,9 +346,9 @@ export function InvestigationDetailView({
           {analysis && (
             <details className="card detail-section-accordion" id="decision" open>
               <summary className="detail-accordion-summary">
-                <h3>Decision analysis</h3>
+                <h3>Decision Intelligence Analysis</h3>
                 <span className="summary-count-tag">
-                  {analysis.recommendation?.action_title || `${rankings[0]?.region || 'North'} ranked #1`}
+                  {analysis.recommendation?.action_title || `${rankings[0]?.region || rankings[0]?.candidate || 'Leading Candidate'} ranked #1`}
                 </span>
               </summary>
               <div className="detail-accordion-body table-responsive-wrapper">
@@ -317,25 +388,27 @@ export function InvestigationDetailView({
           {robustness && (
             <details className="card detail-section-accordion" id="robustness" open>
               <summary className="detail-accordion-summary">
-                <h3>Robustness</h3>
+                <h3>Scenario Robustness Check</h3>
                 <span className={`status-badge ${robustnessBadgeClass}`}>{robustnessLabel}</span>
               </summary>
               <div className="detail-accordion-body">
                 <div className="rob-tri-cards">
                   <div className="card pad-card">
-                    <span className="cap-label">Baseline</span>
-                    <strong>{robustness.baseline_scenario?.result_summary?.top_candidate || 'North'} #1</strong>
+                    <span className="cap-label">Baseline Top Candidate</span>
+                    <strong>{robustness.baseline_scenario?.result_summary?.top_candidate || rankings[0]?.region || 'Candidate #1'}</strong>
                   </div>
                   <div className="card pad-card">
-                    <span className="cap-label">Scenarios tested</span>
-                    <strong>{robustness.alternate_scenarios?.length || 1} alternate</strong>
+                    <span className="cap-label">Scenarios Tested</span>
+                    <strong>{robustness.alternate_scenarios?.length || 0} alternate(s)</strong>
                   </div>
                   <div className="card pad-card">
-                    <span className="cap-label">Result</span>
-                    <strong className="text-ok">Stable across tested scenarios</strong>
+                    <span className="cap-label">Sensitivity Result</span>
+                    <strong className={robustnessStatus === 'STABLE' ? 'text-ok' : 'text-warn'}>
+                      {robustnessStatus === 'STABLE' ? 'Stable across assumptions' : 'Sensitive to perturbation'}
+                    </strong>
                   </div>
                 </div>
-                <div className="callout-card callout-border-stable" style={{ marginTop: '12px' }}>
+                <div className={`callout-card callout-border-${robustnessStatus.toLowerCase()}`} style={{ marginTop: '12px' }}>
                   {robustness.explanation}
                 </div>
               </div>
@@ -345,9 +418,9 @@ export function InvestigationDetailView({
           {/* Section 8: Human Approval */}
           <details className="card detail-section-accordion" id="approval" open>
             <summary className="detail-accordion-summary">
-              <h3>Human approval</h3>
+              <h3>Human-in-the-Loop Review</h3>
               <span className="summary-count-tag">
-                {data.status === 'REQUIRES_REVIEW' ? 'Pending Review' : 'Recorded'}
+                {data.status === 'REQUIRES_REVIEW' ? 'Pending Review' : 'Audit Trace Recorded'}
               </span>
             </summary>
             <div className="detail-accordion-body" style={{ padding: 0 }}>
@@ -368,64 +441,31 @@ export function InvestigationDetailView({
         </div>
 
         {/* Sticky Right Table of Contents (TOC) */}
-        <aside className="detail-toc-sidebar" aria-label="Investigation contents navigation">
-          <div className="cap-label" style={{ marginBottom: '8px' }}>On this page</div>
-          <button
-            type="button"
-            className={`toc-link-btn ${activeToc === 'summary' ? 'active' : ''}`}
-            onClick={() => scrollTo('summary')}
-          >
-            Answer
-          </button>
-          <button
-            type="button"
-            className={`toc-link-btn ${activeToc === 'timeline' ? 'active' : ''}`}
-            onClick={() => scrollTo('timeline')}
-          >
-            Timeline
-          </button>
-          <button
-            type="button"
-            className={`toc-link-btn ${activeToc === 'claims' ? 'active' : ''}`}
-            onClick={() => scrollTo('claims')}
-          >
-            Claims
-          </button>
-          <button
-            type="button"
-            className={`toc-link-btn ${activeToc === 'evidence' ? 'active' : ''}`}
-            onClick={() => scrollTo('evidence')}
-          >
-            Evidence
-          </button>
-          <button
-            type="button"
-            className={`toc-link-btn ${activeToc === 'derived' ? 'active' : ''}`}
-            onClick={() => scrollTo('derived')}
-          >
-            Calculations
-          </button>
-          <button
-            type="button"
-            className={`toc-link-btn ${activeToc === 'decision' ? 'active' : ''}`}
-            onClick={() => scrollTo('decision')}
-          >
-            Decision
-          </button>
-          <button
-            type="button"
-            className={`toc-link-btn ${activeToc === 'robustness' ? 'active' : ''}`}
-            onClick={() => scrollTo('robustness')}
-          >
-            Robustness
-          </button>
-          <button
-            type="button"
-            className={`toc-link-btn ${activeToc === 'approval' ? 'active' : ''}`}
-            onClick={() => scrollTo('approval')}
-          >
-            Approval
-          </button>
+        <aside className="detail-toc-rail" aria-label="Table of Contents">
+          <div className="toc-card card">
+            <span className="cap-label">Audit Contents</span>
+            <nav className="toc-links-list">
+              {[
+                { id: 'summary', label: 'Answer Summary' },
+                { id: 'timeline', label: 'Execution Timeline' },
+                { id: 'claims', label: 'Claims → Evidence' },
+                { id: 'evidence', label: 'Evidence Catalog' },
+                { id: 'derived', label: 'Derived Calculations' },
+                { id: 'decision', label: 'Decision Intelligence' },
+                { id: 'robustness', label: 'Robustness Check' },
+                { id: 'approval', label: 'Human Review' }
+              ].map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={`toc-link-btn ${activeToc === item.id ? 'active' : ''}`}
+                  onClick={() => scrollTo(item.id)}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </nav>
+          </div>
         </aside>
       </div>
     </div>

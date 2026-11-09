@@ -26,7 +26,7 @@
 - [x] **Readiness Probes:** `/ready`, `/health/ready`, `/api/health/ready` present and active.
 - [x] **CORS Configuration:** `backend/app/main.py` binds `CORSMiddleware` using `settings.cors_origins` (supports `localhost:5173`, `localhost:3000`, and dynamic `FRONTEND_ORIGIN`).
 - [x] **Render Compatibility:** `backend/Dockerfile` dynamically binds to `$PORT` via shell expansion `exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}`.
-- [x] **Database Persistence:** PostgreSQL default configured (`postgresql+psycopg2://...`) with connection fallback.
+- [ ] **Database Persistence (Production PostgreSQL):** NOT VERIFIED LOCALLY (Local PostgreSQL port 5432 was unreachable; in-memory SQLite used for automated tests and 9-step integration test; PostgreSQL connectivity must be validated on Render staging).
 - [x] **AST SQL Safety:** AST parsing enforced using `sqlglot` to reject mutation statements (`INSERT`, `UPDATE`, `DELETE`, `DROP`).
 - [x] **Audit Logging:** Tamper-evident audit trail records login attempts, reviews, and tool queries.
 - [x] **Separation of Duties:** Self-review prevention rejects investigator reviewing their own threads (`403 Forbidden`).

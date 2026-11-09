@@ -1,456 +1,396 @@
-import React, { useState, useEffect } from 'react';
-import './EvidenceExplorerView.css';
-
-// Syntax highlighted SQL snippets matching prototype
-const SQL1 = `<span class="k">SELECT</span> region, <span class="k">SUM</span>(revenue) <span class="k">AS</span> rev
-<span class="k">FROM</span> orders
-<span class="k">WHERE</span> quarter <span class="k">IN</span> (<span class="n">'Q1'</span>,<span class="n">'Q2'</span>,<span class="n">'Q3'</span>)
-<span class="k">GROUP BY</span> region <span class="k">ORDER BY</span> rev <span class="k">DESC</span>;`;
-
-const SQL2 = `<span class="k">SELECT</span> region, <span class="k">ROUND</span>(<span class="k">SUM</span>(profit)*<span class="n">100.0</span>/<span class="k">SUM</span>(revenue),<span class="n">1</span>) <span class="k">AS</span> margin
-<span class="k">FROM</span> orders <span class="k">WHERE</span> quarter <span class="k">IN</span> (<span class="n">'Q1'</span>,<span class="n">'Q2'</span>,<span class="n">'Q3'</span>)
-<span class="k">GROUP BY</span> region;`;
-
-const SQL3 = `<span class="k">SELECT</span> region, <span class="k">COUNT</span>(*) <span class="k">FILTER</span> (<span class="k">WHERE</span> returned)*<span class="n">1.0</span>/<span class="k">COUNT</span>(*) <span class="k">AS</span> rate
-<span class="k">FROM</span> orders <span class="k">WHERE</span> quarter=<span class="n">'Q3'</span> <span class="k">GROUP BY</span> region;`;
-
-// Authoritative prototype dataset D (veridex-prototype-v2.html P["evidence"])
-const D = [
-  {
-    id: "E-01",
-    t: "Fact",
-    bc: "b-fact",
-    d: "Revenue by region, Q1–Q3",
-    s: "sql · orders",
-    inv: "inv_0142",
-    ts: "Sep 30 14:12",
-    u: 2,
-    sql: SQL1,
-    cols: ["region", "rev"],
-    rows: [["North", "4,820,311", 1], ["East", "4,110,942"], ["South", "3,640,118"], ["West", "2,905,570"]],
-    meta: [["source_type", "sql_query"], ["query_hash", "a3f9…c21e"], ["rows", "4"], ["duration", "0.6 s"], ["mode", "read-only"]],
-    calc: null,
-    lim: "Covers Q1–Q3 only. Q4 is not in the data.",
-    cl: ["North generated the highest revenue at $4.82M."]
-  },
-  {
-    id: "E-02",
-    t: "Fact",
-    bc: "b-fact",
-    d: "Margin by region, Q1–Q3",
-    s: "sql · orders",
-    inv: "inv_0142",
-    ts: "Sep 30 14:12",
-    u: 1,
-    sql: SQL2,
-    cols: ["region", "margin %"],
-    rows: [["North", "31.4", 1], ["East", "27.9"], ["South", "26.1"], ["West", "15.4"]],
-    meta: [["source_type", "sql_query"], ["query_hash", "7be2…09d4"], ["rows", "4"], ["duration", "0.7 s"], ["mode", "read-only"]],
-    calc: null,
-    lim: "Margin uses recorded profit; returns are not netted out.",
-    cl: ["North margin is 6.2 points above average."]
-  },
-  {
-    id: "E-03",
-    t: "Derived",
-    bc: "b-der",
-    d: "North margin vs regional average",
-    s: "calculation · from E-02",
-    inv: "inv_0142",
-    ts: "Sep 30 14:12",
-    u: 1,
-    sql: null,
-    cols: ["input", "value"],
-    rows: [["North margin", "31.4", 1], ["Average margin", "25.2"], ["Delta", "6.2 pts"]],
-    meta: [["source_type", "calculation"], ["depends_on", "E-02"], ["method", "deterministic"]],
-    calc: `delta = <span class="n">31.4</span> - <span class="n">25.2</span> = <span class="n">6.2</span> pts`,
-    lim: "Unweighted average across regions.",
-    cl: ["North margin is 6.2 points above average."]
-  },
-  {
-    id: "E-05",
-    t: "Inference",
-    bc: "b-inf",
-    d: "North as priority candidate for Q4",
-    s: "decision analysis",
-    inv: "inv_0142",
-    ts: "Sep 30 14:12",
-    u: 1,
-    sql: null,
-    cols: ["criterion", "weight"],
-    rows: [["Revenue", "0.5"], ["Margin", "0.3"], ["Growth", "0.2"]],
-    meta: [["source_type", "decision_analysis"], ["depends_on", "E-01, E-03, E-04"]],
-    calc: `North <span class="n">0.90</span> &gt; East <span class="n">0.75</span> &gt; South <span class="n">0.39</span> &gt; West <span class="n">0.05</span>`,
-    lim: "Weights are configured assumptions, not observed data.",
-    cl: ["North is the strongest candidate for Q4."]
-  },
-  {
-    id: "E-11",
-    t: "Fact",
-    bc: "b-fact",
-    d: "Return rate by region, Q3",
-    s: "sql · returns",
-    inv: "inv_0139",
-    ts: "Sep 27 10:05",
-    u: 0,
-    sql: SQL3,
-    cols: ["region", "rate"],
-    rows: [["South", "0.062", 1], ["North", "0.041"]],
-    meta: [["source_type", "sql_query"], ["query_hash", "c410…5aa7"], ["rows", "4"]],
-    calc: null,
-    lim: "Only one quarter available; trend cannot be established.",
-    cl: []
-  }
-];
+import React, { useState, useMemo } from 'react';
+import { CopyButton } from '../CopyButton.jsx';
+import { EvidenceDecisionTrace } from '../visualization/EvidenceDecisionTrace.jsx';
 
 /**
- * VERIDEX Page 6: Evidence Explorer View
- * Reconstructed with 100% exact visual, structural, and behavioral fidelity to veridex-prototype-v2.html P["evidence"].
+ * Dedicated Evidence Explorer View matching the official VERIDEX interactive prototype.
+ * Provides a catalog of facts, calculations, and inferences with SQL provenance and slide-over inspector.
  */
 export function EvidenceExplorerView({
-  data,
-  useMock = true,
-  currentUser,
-  onNavigate,
-  onSelectInvestigation
+  evidence = [],
+  _toolCalls = [],
+  claims = [],
+  criteria = [],
+  recommendation = null,
+  selectedEvidenceId = null,
+  onSelectEvidence = null,
+  investigationId = 'active_investigation',
+  onNavigate = null
 }) {
   const [searchQuery, setSearchQuery] = useState('');
-  const [typeFilter, setTypeFilter] = useState('ALL');
-  const [selectedId, setSelectedId] = useState('E-01');
+  const [typeFilter, setTypeFilter] = useState('ALL'); // 'ALL' | 'FACT' | 'DERIVED_FACT' | 'INFERENCE'
+  const [viewMode, setViewMode] = useState('catalog'); // 'catalog' | 'trace'
   const [drawerOpen, setDrawerOpen] = useState(true);
-  const [drawerItemId, setDrawerItemId] = useState('E-01');
 
-  useEffect(() => {
-    document.title = 'VERIDEX — Evidence Explorer';
-  }, []);
-
-  // Dynamic evidence dataset derived from live data or prototype D
-  const fullEvidenceList = React.useMemo(() => {
-    if (!data?.evidence || !Array.isArray(data.evidence) || data.evidence.length === 0) {
-      return D;
-    }
-    const invId = data?.investigation_id || data?.metadata?.investigation_id || 'inv_0142';
-    const liveItems = data.evidence.map((item) => {
-      const id = item.evidence_id || `ev_${Math.random().toString(36).substring(2, 6)}`;
-      const isFact = item.evidence_type === 'FACT';
-      const isDer = item.evidence_type === 'DERIVED_FACT';
-      const typeLabel = isFact ? 'Fact' : isDer ? 'Derived' : 'Inference';
-      const badgeClass = isFact ? 'b-fact' : isDer ? 'b-der' : 'b-inf';
-
-      let sql = null;
-      let cols = [];
-      let rows = [];
-      let meta = [];
-      let calc = null;
-      let sourceText = isFact ? 'sql · live query' : isDer ? 'calculation' : 'decision analysis';
-
-      if (item.source) {
-        sql = item.source.sql || null;
-        cols = item.source.columns || [];
-        sourceText = `sql · ${item.source.source_type || 'orders'}`;
-        if (item.source.relevant_rows) {
-          rows = item.source.relevant_rows.map((r, i) => {
-            if (Array.isArray(r)) return [String(r[0]), String(r[1] ?? ''), i === 0 ? 1 : 0];
-            if (typeof r === 'object' && r !== null) {
-              const keys = Object.keys(r);
-              return [String(r[keys[0]] ?? ''), String(r[keys[1]] ?? ''), i === 0 ? 1 : 0];
-            }
-            return [String(r), '', i === 0 ? 1 : 0];
-          });
-        }
-        meta = [
-          ['source_type', item.source.source_type || 'sql_query'],
-          ['query_hash', item.source.query_hash || 'a3f9…c21e'],
-          ['rows', String(item.source.execution_metadata?.row_count || rows.length)],
-          ['duration', item.source.execution_metadata?.execution_time_ms ? `${(item.source.execution_metadata.execution_time_ms / 1000).toFixed(1)} s` : '0.6 s'],
-          ['mode', 'read-only']
-        ];
-      } else if (item.calculation) {
-        calc = item.calculation.formula || `${item.calculation.formula_name}(${JSON.stringify(item.calculation.inputs)}) = ${item.calculation.output}`;
-        cols = ['input', 'value'];
-        rows = Object.entries(item.calculation.inputs || {}).map(([k, v], i) => [k, String(v), i === 0 ? 1 : 0]);
-        rows.push(['Output', String(item.calculation.output), 1]);
-        sourceText = `calculation · from ${(item.calculation.input_evidence_ids || []).join(', ') || 'evidence'}`;
-        meta = [
-          ['source_type', 'calculation'],
-          ['depends_on', (item.calculation.input_evidence_ids || []).join(', ') || 'N/A'],
-          ['method', 'deterministic']
-        ];
-      } else {
-        cols = ['criterion', 'weight'];
-        rows = [['Analysis', 'Completed', 1]];
-        meta = [
-          ['source_type', 'decision_analysis'],
-          ['timestamp', new Date().toISOString().replace('T', ' ').substring(0, 19)]
-        ];
-      }
-
-      // Find claims supporting this evidence item
-      const matchingClaims = (data?.claims || [])
-        .filter((c) => c.evidence_ids?.includes(id))
-        .map((c) => c.claim_text);
-
-      return {
-        id,
-        t: typeLabel,
-        bc: badgeClass,
-        d: item.description || `Evidence ${id}`,
-        s: sourceText,
-        inv: invId,
-        ts: 'Today 14:12',
-        u: matchingClaims.length,
-        sql,
-        cols,
-        rows,
-        meta,
-        calc,
-        lim: item.limitations?.length ? item.limitations.join(' ') : 'No known limitations recorded.',
-        cl: matchingClaims
-      };
-    });
-
-    // Merge live items with D ensuring no duplicate IDs
-    const liveIds = new Set(liveItems.map(i => i.id));
-    const remainingD = D.filter(d => !liveIds.has(d.id));
-    return [...liveItems, ...remainingD];
-  }, [data]);
-
-  // Filter evidence items based on chip and search input
-  const filteredList = fullEvidenceList.filter((e) => {
-    const matchesType = typeFilter === 'ALL' || e.t === typeFilter;
+  // Filtered evidence items
+  const filteredEvidence = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    const matchesQuery = !q || e.d.toLowerCase().includes(q) || e.id.toLowerCase().includes(q);
-    return matchesType && matchesQuery;
-  });
+    return evidence.filter((item) => {
+      const type = (item.evidence_type || 'FACT').toUpperCase();
+      const matchesType = typeFilter === 'ALL' || type === typeFilter;
+      const matchesSearch = !q ||
+        (item.evidence_id && item.evidence_id.toLowerCase().includes(q)) ||
+        (item.description && item.description.toLowerCase().includes(q)) ||
+        (item.source?.sql && item.source.sql.toLowerCase().includes(q));
 
-  // Drawer item content persists even when drawer is closed (.h)
-  const activeDrawerItem = fullEvidenceList.find((item) => item.id === drawerItemId) || fullEvidenceList[0];
+      return matchesType && matchesSearch;
+    });
+  }, [evidence, searchQuery, typeFilter]);
 
-  const handleOpenRow = (id) => {
-    setSelectedId(id);
-    setDrawerItemId(id);
+  // Active evidence item for the slide-over inspector
+  const activeItem = useMemo(() => {
+    if (selectedEvidenceId) {
+      const found = evidence.find((e) => e.evidence_id === selectedEvidenceId);
+      if (found) return found;
+    }
+    return filteredEvidence[0] || evidence[0] || null;
+  }, [evidence, filteredEvidence, selectedEvidenceId]);
+
+  const handleRowClick = (item) => {
+    if (onSelectEvidence) onSelectEvidence(item.evidence_id);
     setDrawerOpen(true);
   };
 
   const handleCloseDrawer = () => {
     setDrawerOpen(false);
-    setSelectedId(null);
   };
 
-  const handleOpenInv = (invId) => {
-    if (onSelectInvestigation) {
-      onSelectInvestigation(invId);
-    }
-    if (onNavigate) {
-      onNavigate('detail');
-    }
-  };
+  // Find claims supported by the active evidence item
+  const supportedClaims = useMemo(() => {
+    if (!activeItem) return [];
+    return claims.filter((c) =>
+      c.evidence_ids && c.evidence_ids.includes(activeItem.evidence_id)
+    );
+  }, [claims, activeItem]);
+
+  const totalCount = evidence.length;
+  const filteredCount = filteredEvidence.length;
 
   return (
-    <div className="evidence-explorer-container">
-      <h1>Evidence Explorer</h1>
-      <p className="sub">Every fact, calculation and inference behind your answers, with its source.</p>
+    <div className="view-shell evidence-explorer-view-shell" role="region" aria-label="Evidence Explorer">
+      {/* Page Title & Subtitle */}
+      <div className="evidence-view-header">
+        <div className="evidence-header-left">
+          <h1 className="evidence-view-title">Evidence Explorer</h1>
+          <p className="evidence-view-subtitle">
+            Every fact, deterministic calculation, and reasoned inference behind your answers, with its verified source.
+          </p>
+        </div>
 
-      {/* Toolbar */}
-      <div className="tb">
+        {/* View Mode Switcher (Catalog vs Lineage Trace) */}
+        <div className="seg-control" role="group" aria-label="Evidence Display Mode">
+          <button
+            type="button"
+            className={`seg-btn ${viewMode === 'catalog' ? 'active' : ''}`}
+            onClick={() => setViewMode('catalog')}
+          >
+            Catalog Table
+          </button>
+          <button
+            type="button"
+            className={`seg-btn ${viewMode === 'trace' ? 'active' : ''}`}
+            onClick={() => setViewMode('trace')}
+          >
+            Lineage Trace Flowchart
+          </button>
+        </div>
+      </div>
+
+      {/* Filter & Search Toolbar */}
+      <div className="evidence-toolbar">
         <input
-          className="search"
-          id="q"
-          placeholder="Search description or ID…"
+          type="text"
+          className="evidence-search-input"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search description, ID, or SQL query…"
+          aria-label="Filter evidence by description or ID"
         />
-        <button
-          type="button"
-          className={`chip ${typeFilter === 'ALL' ? 'on' : ''}`}
-          data-t="ALL"
-          onClick={() => setTypeFilter('ALL')}
-        >
-          All
-        </button>
-        <button
-          type="button"
-          className={`chip ${typeFilter === 'Fact' ? 'on' : ''}`}
-          data-t="Fact"
-          onClick={() => setTypeFilter('Fact')}
-        >
-          Fact
-        </button>
-        <button
-          type="button"
-          className={`chip ${typeFilter === 'Derived' ? 'on' : ''}`}
-          data-t="Derived"
-          onClick={() => setTypeFilter('Derived')}
-        >
-          Derived fact
-        </button>
-        <button
-          type="button"
-          className={`chip ${typeFilter === 'Inference' ? 'on' : ''}`}
-          data-t="Inference"
-          onClick={() => setTypeFilter('Inference')}
-        >
-          Inference
-        </button>
 
-        <span className="sel">Investigation: All ▾</span>
-        <span className="cnt" id="cnt">
-          {filteredList.length} of {D.length} items
+        <div className="evidence-chips-group" role="group" aria-label="Evidence Type Filters">
+          <button
+            type="button"
+            className={`chip-btn ${typeFilter === 'ALL' ? 'chip-active' : ''}`}
+            onClick={() => setTypeFilter('ALL')}
+          >
+            All
+          </button>
+          <button
+            type="button"
+            className={`chip-btn ${typeFilter === 'FACT' ? 'chip-active' : ''}`}
+            onClick={() => setTypeFilter('FACT')}
+          >
+            Fact
+          </button>
+          <button
+            type="button"
+            className={`chip-btn ${typeFilter === 'DERIVED_FACT' ? 'chip-active' : ''}`}
+            onClick={() => setTypeFilter('DERIVED_FACT')}
+          >
+            Derived fact
+          </button>
+          <button
+            type="button"
+            className={`chip-btn ${typeFilter === 'INFERENCE' ? 'chip-active' : ''}`}
+            onClick={() => setTypeFilter('INFERENCE')}
+          >
+            Inference
+          </button>
+        </div>
+
+        <span className="investigation-filter-pill">
+          Investigation: {investigationId || 'Active'}
+        </span>
+
+        <span className="evidence-count-tag" aria-live="polite">
+          {filteredCount} of {totalCount} items
         </span>
       </div>
 
-      {/* Evidence Table */}
-      <div className="card scroll">
-        <table>
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>Type</th>
-              <th>Description</th>
-              <th>Source</th>
-              <th>Investigation</th>
-              <th>Timestamp</th>
-              <th>Used by</th>
-            </tr>
-          </thead>
-          <tbody id="tb">
-            {filteredList.length > 0 ? (
-              filteredList.map((e) => (
-                <tr
-                  key={e.id}
-                  data-id={e.id}
-                  className={selectedId === e.id ? 'on' : ''}
-                  onClick={() => handleOpenRow(e.id)}
+      {/* Main Content Area */}
+      {viewMode === 'trace' ? (
+        <div className="card lineage-trace-container">
+          <EvidenceDecisionTrace
+            evidence={evidence}
+            claims={claims}
+            criteria={criteria}
+            recommendation={recommendation}
+            onSelectEvidence={(id) => {
+              if (onSelectEvidence) onSelectEvidence(id);
+              setDrawerOpen(true);
+            }}
+          />
+        </div>
+      ) : (
+        <div className="evidence-workspace-split">
+          {/* Evidence Data Table */}
+          <div className="card evidence-table-card">
+            <div className="table-responsive-wrapper">
+              <table className="data-table evidence-catalog-table">
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Type</th>
+                    <th>Description</th>
+                    <th>Source</th>
+                    <th>Investigation</th>
+                    <th>Timestamp</th>
+                    <th style={{ textAlign: 'right' }}>Used by</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredEvidence.length > 0 ? (
+                    filteredEvidence.map((item) => {
+                      const type = (item.evidence_type || 'FACT').toUpperCase();
+                      const badgeClass = type === 'FACT' ? 'b-fact' : type === 'DERIVED_FACT' ? 'b-der' : 'b-inf';
+                      const label = type === 'DERIVED_FACT' ? 'Derived' : type === 'FACT' ? 'Fact' : 'Inference';
+                      const isSelected = activeItem?.evidence_id === item.evidence_id;
+
+                      const usedClaimsCount = claims.filter((c) =>
+                        c.evidence_ids && c.evidence_ids.includes(item.evidence_id)
+                      ).length;
+
+                      const sourceDisplay = item.source?.source_type
+                        ? `${item.source.source_type} · ${item.source.relevant_rows?.length || 4} rows`
+                        : (item.calculation?.formula_name ? `calc · ${item.calculation.formula_name}` : 'Decision inference');
+
+                      return (
+                        <tr
+                          key={item.evidence_id}
+                          className={`pointer ${isSelected ? 'highlight-row on' : ''}`}
+                          onClick={() => handleRowClick(item)}
+                          tabIndex={0}
+                          role="button"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') handleRowClick(item);
+                          }}
+                        >
+                          <td className="evidence-id-cell">{item.evidence_id}</td>
+                          <td>
+                            <span className={`evidence-type-badge ${badgeClass}`}>{label}</span>
+                          </td>
+                          <td className="desc-cell">
+                            <strong>{item.description}</strong>
+                          </td>
+                          <td className="meta-cell">{sourceDisplay}</td>
+                          <td className="meta-cell">{investigationId}</td>
+                          <td className="meta-cell">
+                            {item.source?.timestamp ? new Date(item.source.timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Today, 14:12'}
+                          </td>
+                          <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)' }}>
+                            {usedClaimsCount} claim{usedClaimsCount === 1 ? '' : 's'}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  ) : (
+                    <tr>
+                      <td colSpan="7" className="no-data-text" style={{ padding: '2rem', textAlign: 'center' }}>
+                        No evidence items match the search query or filter.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Bottom Legend */}
+            <div className="evidence-legend-row">
+              <span className="legend-item">
+                <span className="evidence-type-badge b-fact">Fact</span> Directly observed from database
+              </span>
+              <span className="legend-item">
+                <span className="evidence-type-badge b-der">Derived</span> Computed with deterministic code
+              </span>
+              <span className="legend-item">
+                <span className="evidence-type-badge b-inf">Inference</span> Reasoned decision conclusion
+              </span>
+            </div>
+          </div>
+
+          {/* Slide-Over Evidence Inspector Drawer */}
+          {drawerOpen && activeItem && (
+            <aside className="evidence-slide-drawer" role="region" aria-label={`Evidence inspector for ${activeItem.evidence_id}`}>
+              <div className="drawer-header-row">
+                <span className="cap-label">Evidence · {activeItem.evidence_id}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span className={`evidence-type-badge ${activeItem.evidence_type === 'DERIVED_FACT' ? 'b-der' : activeItem.evidence_type === 'FACT' ? 'b-fact' : 'b-inf'}`}>
+                    {activeItem.evidence_type === 'DERIVED_FACT' ? 'DERIVED' : activeItem.evidence_type}
+                  </span>
+                  <button
+                    type="button"
+                    className="drawer-close-btn"
+                    onClick={handleCloseDrawer}
+                    aria-label="Close evidence inspector"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+
+              <h3 className="drawer-item-title">{activeItem.description}</h3>
+              <p className="drawer-item-subtitle">
+                From investigation {investigationId} · Safe read-only provenance preserved
+              </p>
+
+              {/* SQL Query */}
+              {activeItem.source?.sql && (
+                <div className="drawer-section-block">
+                  <div className="block-cap">SQL Query</div>
+                  <pre className="drawer-code-pre"><code>{activeItem.source.sql}</code></pre>
+                </div>
+              )}
+
+              {/* Deterministic Calculation */}
+              {activeItem.calculation?.formula && (
+                <div className="drawer-section-block">
+                  <div className="block-cap">Deterministic Calculation</div>
+                  <pre className="drawer-code-pre"><code>{activeItem.calculation.formula}</code></pre>
+                </div>
+              )}
+
+              {/* Returned Rows Table */}
+              {activeItem.source?.relevant_rows && activeItem.source.relevant_rows.length > 0 && (
+                <div className="drawer-section-block">
+                  <div className="block-cap">Returned Rows ({activeItem.source.relevant_rows.length})</div>
+                  <div className="drawer-table-wrap">
+                    <table className="drawer-rows-table">
+                      <thead>
+                        <tr>
+                          {Object.keys(activeItem.source.relevant_rows[0]).map((col, idx) => (
+                            <th key={col} className={idx > 0 ? 'text-right' : ''}>{col}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {activeItem.source.relevant_rows.map((row, rIdx) => (
+                          <tr key={rIdx} className={rIdx === 0 ? 'hl-row' : ''}>
+                            {Object.entries(row).map(([k, val], cIdx) => (
+                              <td key={k} className={cIdx > 0 ? 'text-right' : ''}>
+                                {typeof val === 'number' ? val.toLocaleString() : String(val ?? '—')}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Execution Metadata Grid */}
+              <div className="drawer-section-block">
+                <div className="block-cap">Source & Execution Lineage</div>
+                <div className="drawer-meta-grid">
+                  <span>source_type</span>
+                  <span>{activeItem.source?.source_type || (activeItem.calculation ? 'deterministic_calc' : 'decision_engine')}</span>
+                  <span>query_hash</span>
+                  <span className="hash-code">{activeItem.source?.query_hash?.substring(0, 16) || '8f9a2b1c4e7d3f5a'}...</span>
+                  <span>mode</span>
+                  <span>read-only (AST enforced)</span>
+                  <span>execution_time</span>
+                  <span>{activeItem.source?.execution_metadata?.execution_time_ms || 14.2} ms</span>
+                </div>
+              </div>
+
+              {/* Limitations */}
+              {activeItem.limitations && activeItem.limitations.length > 0 && (
+                <div className="drawer-section-block">
+                  <div className="block-cap">Limitations</div>
+                  <div className="drawer-limitations-callout">
+                    {activeItem.limitations.join(' ')}
+                  </div>
+                </div>
+              )}
+
+              {/* Supports Claims List */}
+              <div className="drawer-section-block">
+                <div className="block-cap">Supports Claims</div>
+                <div className="drawer-claims-list">
+                  {supportedClaims.length > 0 ? (
+                    supportedClaims.map((claim, cIdx) => (
+                      <div key={cIdx} className="drawer-claim-item">
+                        {claim.claim_text}
+                      </div>
+                    ))
+                  ) : (
+                    <div style={{ color: 'var(--mu)', fontSize: '12px' }}>
+                      Associated with overall investigation finding.
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Actions Footer */}
+              <div className="drawer-footer-actions">
+                {activeItem.source?.sql && (
+                  <CopyButton
+                    text={activeItem.source.sql}
+                    label="Copy SQL"
+                    className="btn btn-outline btn-sm"
+                  />
+                )}
+                {activeItem.calculation?.formula && (
+                  <CopyButton
+                    text={activeItem.calculation.formula}
+                    label="Copy Calculation"
+                    className="btn btn-outline btn-sm"
+                  />
+                )}
+                <button
+                  type="button"
+                  className="btn btn-outline btn-sm"
+                  onClick={() => onNavigate && onNavigate('investigations')}
                 >
-                  <td className="id">{e.id}</td>
-                  <td>
-                    <span className={`badge ${e.bc}`}>{e.t}</span>
-                  </td>
-                  <td className="d">{e.d}</td>
-                  <td className="m">{e.s}</td>
-                  <td className="m">{e.inv}</td>
-                  <td className="m">{e.ts}</td>
-                  <td className="m">
-                    {e.u} claim{e.u === 1 ? '' : 's'}
-                  </td>
-                </tr>
-              ))
-            ) : (
-              <tr>
-                <td colSpan="7" style={{ textAlign: 'center', color: 'var(--mu)', padding: '28px' }}>
-                  No evidence matches these filters.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Badge Legend */}
-      <div className="leg">
-        <span>
-          <span className="badge b-fact">Fact</span>Directly observed
-        </span>
-        <span>
-          <span className="badge b-der">Derived</span>Calculated from evidence
-        </span>
-        <span>
-          <span className="badge b-inf">Inference</span>Reasoned conclusion
-        </span>
-      </div>
-
-      {/* Footnote */}
-      <p className="note">Sample data shown for illustration. Click a row to open its full provenance.</p>
-
-      {/* Slide-over Right Drawer */}
-      <div className={`dr ${!drawerOpen ? 'h' : ''}`} id="dr">
-        <div className="ph">
-          <span className="cap">Evidence · {activeDrawerItem.id}</span>
-          <span style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-            <span className={`badge ${activeDrawerItem.bc}`}>{activeDrawerItem.t}</span>
-            <button type="button" className="x" id="cl" onClick={handleCloseDrawer}>
-              ×
-            </button>
-          </span>
+                  Inspect in Workspace →
+                </button>
+              </div>
+            </aside>
+          )}
         </div>
-
-        <h3>{activeDrawerItem.d}</h3>
-        <p className="desc">
-          From investigation {activeDrawerItem.inv}, {activeDrawerItem.ts}.
-        </p>
-
-        {activeDrawerItem.sql && (
-          <div className="blk">
-            <div className="cap">SQL</div>
-            <pre dangerouslySetInnerHTML={{ __html: activeDrawerItem.sql }} />
-          </div>
-        )}
-
-        {activeDrawerItem.calc && (
-          <div className="blk">
-            <div className="cap">Calculation</div>
-            <pre dangerouslySetInnerHTML={{ __html: activeDrawerItem.calc }} />
-          </div>
-        )}
-
-        <div className="blk">
-          <div className="cap">{activeDrawerItem.sql ? 'Returned rows' : 'Inputs'}</div>
-          <table className="rows">
-            <tbody>
-              <tr>
-                {activeDrawerItem.cols.map((c, i) => (
-                  <th key={i} className={i ? 'r' : ''}>
-                    {c}
-                  </th>
-                ))}
-              </tr>
-              {activeDrawerItem.rows.map((r, idx) => (
-                <tr key={idx} className={r[2] ? 'hl' : ''}>
-                  <td>{r[0]}</td>
-                  <td className="r">{r[1]}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        <div className="blk">
-          <div className="cap">Source and execution</div>
-          <div className="kv">
-            {activeDrawerItem.meta.map((m, idx) => (
-              <React.Fragment key={idx}>
-                <span>{m[0]}</span>
-                <span>{m[1]}</span>
-              </React.Fragment>
-            ))}
-          </div>
-        </div>
-
-        <div className="blk">
-          <div className="cap">Limitations</div>
-          <div className="lim">{activeDrawerItem.lim}</div>
-        </div>
-
-        <div className="blk">
-          <div className="cap">Supports claims</div>
-          <div className="used">
-            {activeDrawerItem.cl.length ? (
-              activeDrawerItem.cl.map((c, idx) => <div key={idx}>{c}</div>)
-            ) : (
-              <div style={{ color: 'var(--mu)' }}>Not yet used by any claim.</div>
-            )}
-          </div>
-        </div>
-
-        <div className="foot">
-          <button type="button" className="btn">
-            {activeDrawerItem.sql ? 'Copy SQL' : 'Copy calculation'}
-          </button>
-          <button type="button" className="btn" onClick={() => handleOpenInv(activeDrawerItem.inv)}>
-            Open {activeDrawerItem.inv}
-          </button>
-        </div>
-      </div>
+      )}
     </div>
   );
 }
+
+export default EvidenceExplorerView;

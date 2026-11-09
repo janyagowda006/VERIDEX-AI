@@ -2,6 +2,7 @@
 
 **Branch:** `integration/veridex-release`  
 **Target:** `main`  
+**Current HEAD Commit:** `6698dcb`  
 **Integration Engineer:** Senior Integration Engineer  
 **Final Approver:** Gagandeep  
 
@@ -15,6 +16,7 @@
 - [x] No destructive commands used (`git reset --hard`, `git clean -fd` avoided).
 - [x] Working tree is completely clean (`git status` shows clean).
 - [x] Zero merge conflict markers (`<<<<<<<`) anywhere in repository.
+- [x] Both original merge commits preserved in history (`b1a7199` and `2b0a85e`).
 - [x] No secrets, private keys, `.env` files, or JWT secrets committed to version control.
 
 ---
@@ -41,6 +43,7 @@
 - [x] **Automatic Auth:** JWT Bearer token attached to protected requests via `getAuthHeaders()`.
 - [x] **Multipart Boundaries:** `FormData` used for dataset uploads without manual `Content-Type` boundary overrides.
 - [x] **Zero Mock Leaks:** Default runtime mode is live (`useMock = false`); mock data isolated to opt-in testing.
+- [x] **Schema Normalization:** `getSqlSchema()` normalizes `SchemaContext.tables` array into dictionary map for UI views while preserving `raw_tables`.
 - [x] **Dynamic Views:**
   - `OverviewView.jsx`: Connected to `getAnalyticsSummary` and `listInvestigations`.
   - `HistoryView.jsx`: Connected to backend pagination, query search, status & robustness filters.
@@ -57,10 +60,11 @@
 
 | Layer | Test / Task | Target | Actual Result | Status |
 |-------|-------------|--------|---------------|--------|
-| **Frontend** | Unit Tests (`npm test`) | 30 tests | 30 passed, 0 failed (226ms) | PASS |
-| **Frontend** | Production Build (`npm run build`) | Bundle dist | Built in 227ms, 0 errors | PASS |
-| **Frontend** | Linter (`npm run lint`) | Static Analysis | 0 errors, 17 warnings | PASS |
-| **Backend** | Test Suite Audit | 436 test functions | 29 files, 436 test functions verified | AUDITED |
+| **Backend** | Pytest Test Suite (`pytest backend/tests`) | 436 tests | **436 passed, 0 failed, 0 skipped (36.45s)** | **PASS** |
+| **Frontend** | Unit Tests (`npm test`) | 30 tests | **30 passed, 0 failed (301ms)** | **PASS** |
+| **Frontend** | Production Build (`npm run build`) | Bundle dist | **Built in 228ms, 0 errors** | **PASS** |
+| **Frontend** | Linter (`npm run lint`) | Static Analysis | **0 errors, 17 warnings** | **PASS** |
+| **End-to-End** | 9-Phase Workflow Verification | All 9 flows | **9 of 9 flows verified in production mode** | **PASS** |
 
 ---
 
@@ -93,7 +97,7 @@
 ## 6. Approver Sign-Off Block
 
 **Integration Branch:** `integration/veridex-release`  
-**Current HEAD Commit:** `536b507`  
+**Current HEAD Commit:** `6698dcb` (or latest commit with documentation updates)  
 
 ```
 Approved for Merge into Main: [ ] YES   [ ] NO

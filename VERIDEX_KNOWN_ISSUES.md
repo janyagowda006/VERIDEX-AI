@@ -66,3 +66,4 @@ Running `npm run lint` (`oxlint`) yields **0 errors** and **17 non-blocking warn
 
 - **Self-Review Separation:** An investigator cannot approve or reject their own investigation thread. The backend enforces `403 Forbidden` (`Investigator cannot review own investigation`). The frontend surfaces this error cleanly to the user.
 - **SQL Glot AST Validation:** Any attempts to run modifying SQL (`INSERT`, `UPDATE`, `DELETE`, `DROP`, `ALTER`) via `POST /api/tools/sql-query` are rejected by the AST analyzer with a descriptive error.
+

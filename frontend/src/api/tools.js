@@ -44,10 +44,29 @@ export async function getDbStatus(signal = null) {
  * @returns {Promise<{ tables: Object, relationships: Array, table_row_counts: Object }>}
  */
 export async function getSqlSchema(signal = null) {
-  return await apiRequest('/api/tools/sql-schema', {
+  const data = await apiRequest('/api/tools/sql-schema', {
     method: 'GET',
     signal
   });
+
+  // Normalize schema: if tables is an array of TableSchema objects, provide mapped dictionary
+  if (data && Array.isArray(data.tables)) {
+    const tableMap = {};
+    for (const t of data.tables) {
+      tableMap[t.name] = {
+        name: t.name,
+        columns: t.columns || [],
+        foreign_keys: t.foreign_keys || []
+      };
+    }
+    return {
+      ...data,
+      tables: tableMap,
+      raw_tables: data.tables
+    };
+  }
+
+  return data;
 }
 
 /**

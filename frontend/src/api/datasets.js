@@ -73,7 +73,9 @@ export async function listConnectedSources(signal = null) {
   return Object.entries(schema.tables).map(([tableName, tableDetails]) => ({
     name: tableName,
     type: 'Relational Database Table',
-    columns: tableDetails.columns || [],
+    columns: Array.isArray(tableDetails.columns)
+      ? tableDetails.columns.map((c) => (typeof c === 'string' ? c : c.name || JSON.stringify(c)))
+      : [],
     rowCount: schema.table_row_counts?.[tableName] ?? 0,
     status: 'Connected',
     access: 'Read-Only Safe Mode'

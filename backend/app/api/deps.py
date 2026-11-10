@@ -1,7 +1,9 @@
+import os
 from typing import Optional, List, Callable
 from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
+from app.core.config import settings
 from app.core.db import get_db
 from app.core.auth import decode_access_token, get_password_hash
 from app.models.business_data import Base
@@ -97,7 +99,8 @@ def get_current_user(
     mock_role = request.headers.get("X-Veridex-Mock-Role")
     no_auth_fallback = request.headers.get("X-Veridex-No-Auth-Fallback")
 
-    env = getattr(request.app.state, "ENVIRONMENT", "development")
+    env = getattr(request.app.state, "ENVIRONMENT", None) or os.environ.get("ENVIRONMENT") or getattr(settings, "ENVIRONMENT", "development")
+    env = str(env).strip().lower()
 
     if not token and env == "development" and not no_auth_fallback:
         if mock_user_id or mock_role:
@@ -120,7 +123,8 @@ def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    payload = decode_access_token(token)
+    signing_secret = getattr(request.app.state, "JWT_SECRET", None) or os.environ.get("JWT_SECRET") or getattr(settings, "JWT_SECRET", None)
+    payload = decode_access_token(token, secret_key=signing_secret)
     user_id = payload.get("user_id")
     if not user_id:
         raise HTTPException(

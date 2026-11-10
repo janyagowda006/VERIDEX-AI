@@ -31,6 +31,7 @@ if backend_dir not in sys.path:
 
 os.environ["TESTING"] = "1"
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
+os.environ["JWT_SECRET"] = "veridex_production_verification_secret_key_random_64_bytes_secure"
 
 from app.main import app
 from app.core.db import Base, get_db
@@ -160,7 +161,7 @@ def run_e2e_verification():
     # Direct DB record verification
     inv_record = db.query(Investigation).filter(Investigation.investigation_id == inv_id).first()
     assert inv_record is not None
-    print(f"  ✓ Direct DB query verification: Investigation '{inv_id}' persisted with status '{inv_record.status}'")
+    print(f"  ✓ Direct DB query verification: Investigation '{inv_id}' persisted with status '{inv_record.status}' (Error info: '{inv_record.error_message or 'None'}')")
 
     # --- Phase 7: Robustness Re-assessment ---
     print("\n[Phase 7] Robustness Re-assessment:")

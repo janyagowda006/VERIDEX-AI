@@ -65,6 +65,26 @@ def health_check():
     return {"status": "ok"}
 
 
+@router.get("/ready")
+@router.get("/health/ready")
+@router.get("/api/health/ready")
+def readiness_check(db: Session = Depends(get_db)):
+    """
+    Readiness check endpoint verifying database connectivity.
+    Returns HTTP 200 with readiness status, or HTTP 503 if database is unreachable.
+    """
+    try:
+        from sqlalchemy import text
+        db.execute(text("SELECT 1"))
+        return {"status": "ready", "database": "connected"}
+    except Exception as exc:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=503,
+            content={"status": "unhealthy", "database": "disconnected", "detail": str(exc)}
+        )
+
+
 @router.post("/api/auth/login", response_model=Token)
 def login_for_access_token(
     request_data: LoginRequest,
@@ -189,6 +209,7 @@ def run_sql_query_tool(
     return execute_read_only_sql(request.sql, db)
 
 
+@router.get("/api/tools/sql-schema", response_model=SchemaContext)
 @router.get("/api/tools/schema", response_model=SchemaContext)
 def get_sql_schema_tool(
     db: Session = Depends(get_db),

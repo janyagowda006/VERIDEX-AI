@@ -1,369 +1,353 @@
-import React, { useState, useEffect } from 'react';
-import './RobustnessView.css';
-
-// Prototype baseline data & normalization math
-const N_CANDIDATES = {
-  North: [1, 1, 0.523],
-  East: [0.628, 0.781, 1],
-  South: [0.382, 0.669, 0]
-};
-
-const BASELINE_WEIGHTS = [0.5, 0.3, 0.2];
-
-const normWeights = (w) => {
-  const tot = w.reduce((a, b) => a + b, 0);
-  return w.map((x) => x / tot);
-};
-
-const rankCandidates = (w) => {
-  const nw = normWeights(w);
-  return Object.entries(N_CANDIDATES)
-    .map(([k, v]) => ({
-      k,
-      s: v.reduce((a, x, i) => a + x * nw[i], 0)
-    }))
-    .sort((a, b) => b.s - a.s);
-};
-
-const BASELINE_RANK = rankCandidates(BASELINE_WEIGHTS);
-const BASELINE_POS = Object.fromEntries(BASELINE_RANK.map((r, i) => [r.k, i + 1]));
-const BASELINE_SCORE = Object.fromEntries(BASELINE_RANK.map((r) => [r.k, r.s]));
-
-const SCENARIOS = {
-  m: { t: "Margin weight ×2", d: "Margin matters more than revenue growth.", w: [0.5, 0.6, 0.2], ch: 1 },
-  g: { t: "Growth weight ×3", d: "Recent momentum matters much more.", w: [0.5, 0.3, 0.6], ch: 2 },
-  r: { t: "Revenue weight ×2", d: "Scale matters more than margin.", w: [1, 0.3, 0.2], ch: 0 },
-  e: { t: "Equal weights", d: "All criteria count the same.", w: [1, 1, 1], ch: -1 }
-};
-
-const LEAD_MARGIN_LINE = {
-  STABLE: 'Lead margin 0.16 · minimum required 0.05',
-  SENSITIVE: 'Lead flips by 0.03 in one scenario · minimum required 0.05',
-  INSUFFICIENT_EVIDENCE: null
-};
-
-const CONFIGS = {
-  STABLE: {
-    c: "var(--ok)",
-    b: "b-ok",
-    l: "✓ Stable",
-    p: "Finding remains consistent across 3 alternate scenarios.",
-    sc: ["m", "r", "e"],
-    next: "You can act on this recommendation. Conclusions stay the same across the tested assumptions."
-  },
-  SENSITIVE: {
-    c: "var(--warn)",
-    b: "b-warn",
-    l: "◐ Sensitive",
-    p: "The recommended candidate changes under the alternate scenario.",
-    sc: ["m", "g"],
-    next: "North leads on the baseline weights, but East is ahead if growth is weighted heavily. Confirm how much weight growth deserves before committing."
-  },
-  INSUFFICIENT_EVIDENCE: {
-    c: "var(--neu)",
-    b: "b-neu",
-    l: "○ Insufficient evidence",
-    p: "Insufficient evidence to determine robustness.",
-    sc: [],
-    next: "Treat the recommendation as provisional. More periods of growth data would allow scenarios to be tested."
-  }
-};
-
-const fmt = (x) => x.toFixed(2);
+import React, { useState } from 'react';
+import { RobustnessScenarioChart } from '../visualization/RobustnessScenarioChart.jsx';
+import { HumanReviewPanel } from '../HumanReviewPanel.jsx';
+import { reassessInvestigation } from '../../api/client.js';
 
 /**
- * VERIDEX Page 8: Robustness Analysis View
- * Reconstructed with 100% exact visual, structural, mathematical, and behavioral fidelity to veridex-prototype-v2.html P["robustness"].
+ * Dedicated Robustness Analysis View matching the official VERIDEX interactive prototype.
+ * Evaluates whether recommendations survive alternate scenario perturbation tests.
+ * Displays backend-calculated sensitivity, scenario results, and interactive re-assessment.
  */
 export function RobustnessView({
-  data,
-  useMock = true,
-  currentUser,
-  onNavigate,
-  onSelectInvestigation
+  data = null,
+  onNavigate = null,
+  currentUser = null,
+  useMock = false,
+  onRobustnessUpdated = null
 }) {
-  const [selectedStatus, setSelectedStatus] = useState(() => {
-    return data?.analysis?.robustness?.status || 'STABLE';
-  });
+  const [shiftPct, setShiftPct] = useState(10.0);
+  const [reassessing, setReassessing] = useState(false);
+  const [reassessError, setReassessError] = useState(null);
+  const [reassessResult, setReassessResult] = useState(null);
 
-  useEffect(() => {
-    if (data?.analysis?.robustness?.status) {
-      setSelectedStatus(data.analysis.robustness.status);
+  const activeData = reassessResult ? { ...data, analysis: { ...(data?.analysis || {}), robustness: reassessResult.robustness } } : data;
+  const analysis = activeData?.analysis;
+  const robustness = activeData?.analysis?.robustness;
+  const recommendation = analysis?.recommendation;
+  const rankings = analysis?.rankings || [];
+  const invId = activeData?.metadata?.investigation_id || activeData?.investigation_id || null;
+
+  const handleReassess = async () => {
+    if (!invId) {
+      setReassessError("Cannot reassess robustness: missing investigation ID.");
+      return;
     }
-  }, [data]);
 
-  useEffect(() => {
-    document.title = 'VERIDEX — Robustness Analysis';
-  }, []);
+    setReassessing(true);
+    setReassessError(null);
 
-  const activeCfg = CONFIGS[selectedStatus] || CONFIGS.STABLE;
-
-  const handleNavigate = (targetView) => {
-    if (onNavigate) {
-      onNavigate(targetView);
+    try {
+      const result = await reassessInvestigation(invId, shiftPct, useMock);
+      setReassessResult(result);
+      if (onRobustnessUpdated) {
+        onRobustnessUpdated(result);
+      }
+    } catch (err) {
+      setReassessError(err.detail || err.message || "Failed to execute robustness re-assessment.");
+    } finally {
+      setReassessing(false);
     }
   };
 
-  const renderScenarioCard = (key) => {
-    const s = SCENARIOS[key];
-    if (!s) return null;
-
-    const r = rankCandidates(s.w);
-    const weightLabels = ["Revenue", "Margin", "Growth"];
-    const n = normWeights(s.w);
-    const topCandidate = r[0].k;
-    const isChanged = topCandidate !== BASELINE_RANK[0].k;
-
+  if (!robustness) {
     return (
-      <div key={key} className="card scn">
-        <div className="sh">
-          <div>
-            <span className="cap">Scenario</span>
-            <h3>{s.t}</h3>
-            <p>{s.d}</p>
-            <div className="w">
-              {weightLabels.map((lbl, idx) => (
-                <span key={idx} className={idx === s.ch ? 'ch' : ''}>
-                  {lbl} {fmt(n[idx])}
-                </span>
-              ))}
-            </div>
+      <div className="view-shell robustness-view-shell" role="region" aria-label="Robustness Analysis">
+        <div className="card placeholder-card">
+          <div className="card-header-row">
+            <h2 className="section-heading">Robustness Analysis</h2>
           </div>
-          <span className={`badge ${isChanged ? 'b-warn' : 'b-ok'}`}>
-            {isChanged ? `${topCandidate} becomes #1` : `${BASELINE_RANK[0].k} remains #1`}
-          </span>
-        </div>
-
-        <div className="scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>Rank</th>
-                <th>Candidate</th>
-                <th className="r">Baseline</th>
-                <th className="r">Scenario score</th>
-                <th className="r">Shift</th>
-              </tr>
-            </thead>
-            <tbody>
-              {r.map((x, i) => {
-                const shift = BASELINE_POS[x.k] - (i + 1);
-                const isRowChanged = BASELINE_POS[x.k] !== i + 1;
-                return (
-                  <tr key={x.k} className={isRowChanged ? 'chg' : ''}>
-                    <td className="m">{i + 1}</td>
-                    <td>{x.k}</td>
-                    <td className="r m">
-                      #{BASELINE_POS[x.k]} · {fmt(BASELINE_SCORE[x.k])}
-                    </td>
-                    <td className="r m">
-                      <span
-                        className="mini"
-                        style={{
-                          width: `${x.s * 70}px`,
-                          background: isChanged && i === 0 ? 'var(--warn)' : 'var(--pr)'
-                        }}
-                      />
-                      {fmt(x.s)}
-                    </td>
-                    <td className={`r m ${shift > 0 ? 'up' : shift < 0 ? 'dn' : 'eq'}`}>
-                      {shift > 0 ? `▲ ${shift}` : shift < 0 ? `▼ ${-shift}` : '—'}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <p>No robustness or scenario perturbation assessment is available for the current investigation.</p>
+          <p className="summary-desc">
+            Execute a decision intelligence investigation from the workspace to evaluate parameter perturbations, alternate scenario weighting, and finding stability.
+          </p>
+          <div>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => onNavigate && onNavigate('investigations')}
+            >
+              Open Investigations Workspace →
+            </button>
+          </div>
         </div>
       </div>
     );
-  };
+  }
+
+  const topCandidate = rankings[0]?.region
+    || rankings[0]?.candidate
+    || recommendation?.action_title?.replace(/^Prioritize\s+/i, '')
+    || 'Leading Candidate';
+
+  const status = robustness.status || 'STABLE';
+  const statusBadgeClass = status === 'STABLE'
+    ? 'b-ok'
+    : status === 'SENSITIVE'
+      ? 'b-warn'
+      : 'b-neu';
+
+  const statusLabel = status === 'STABLE'
+    ? '✓ Stable'
+    : status === 'SENSITIVE'
+      ? '◐ Sensitive'
+      : '○ Insufficient evidence';
+
+  const baseline = robustness.baseline_scenario;
+  const alternates = robustness.alternate_scenarios || [];
+
+  const interpretationText = status === 'STABLE'
+    ? 'You can act on this recommendation. Conclusions stay the same across all evaluated alternate assumptions.'
+    : status === 'SENSITIVE'
+      ? 'The recommended candidate changes under an alternate scenario. Confirm domain weightings before committing.'
+      : 'Treat the recommendation as provisional. Insufficient empirical evidence exists to establish robustness.';
 
   return (
-    <div className="robustness-page-container">
+    <div className="view-shell robustness-view-shell" role="region" aria-label="Robustness Analysis Dashboard">
       {/* Breadcrumb Navigation */}
-      <div className="crumb">
-        <a
-          href="#"
-          onClick={(e) => {
-            e.preventDefault();
-            handleNavigate('decision');
-          }}
+      <div className="view-breadcrumb-row">
+        <button
+          type="button"
+          className="breadcrumb-link-btn"
+          onClick={() => onNavigate && onNavigate('decisions')}
         >
           Decisions
-        </a>{' '}
-        /{' '}
-        <a
-          href="#"
-          onClick={(e) => {
-            e.preventDefault();
-            handleNavigate('decision');
-          }}
+        </button>
+        <span className="crumb-sep">/</span>
+        <button
+          type="button"
+          className="breadcrumb-link-btn"
+          onClick={() => onNavigate && onNavigate('decisions')}
         >
-          Prioritize North region
-        </a>{' '}
-        / Robustness
+          {recommendation?.action_title || 'Decision Recommendation'}
+        </button>
+        <span className="crumb-sep">/</span>
+        <span className="crumb-context">Robustness</span>
       </div>
 
-      {/* Top Header & Demo State Switch */}
-      <div className="top">
+      {/* Top Heading */}
+      <div className="robustness-view-header">
         <div>
-          <h1>Robustness analysis</h1>
-          <p className="sub">Does the recommendation survive different assumptions?</p>
+          <h1 className="robustness-view-title">Robustness & Sensitivity Analysis</h1>
+          <p className="robustness-view-subtitle">
+            Deterministic stress-testing: does the recommendation survive alternate scenario perturbations?
+          </p>
         </div>
-        <div className="demo">
-          Preview state
-          <div className="seg" id="sw">
-            <button
-              type="button"
-              className={selectedStatus === 'STABLE' ? 'on' : ''}
-              data-s="STABLE"
-              onClick={() => setSelectedStatus('STABLE')}
-            >
-              Stable
-            </button>
-            <button
-              type="button"
-              className={selectedStatus === 'SENSITIVE' ? 'on' : ''}
-              data-s="SENSITIVE"
-              onClick={() => setSelectedStatus('SENSITIVE')}
-            >
-              Sensitive
-            </button>
-            <button
-              type="button"
-              className={selectedStatus === 'INSUFFICIENT_EVIDENCE' ? 'on' : ''}
-              data-s="INSUFFICIENT_EVIDENCE"
-              onClick={() => setSelectedStatus('INSUFFICIENT_EVIDENCE')}
-            >
-              Insufficient
-            </button>
+      </div>
+
+      {/* Interactive Re-assessment Control Bar */}
+      {invId && (
+        <div className="card pad-card" style={{ marginBottom: '1.25rem' }}>
+          <div className="card-header-row">
+            <div>
+              <span className="cap-label">Dynamic Stress Testing</span>
+              <h3 style={{ margin: '0.2rem 0', fontSize: '1.05rem' }}>Scenario Perturbation Threshold</h3>
+              <p className="summary-desc" style={{ margin: 0 }}>
+                Re-evaluate candidate rankings under synthetic parameter shifts (POST /api/investigations/{'{id}'}/reassess).
+              </p>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+              <div className="seg-control" role="group" aria-label="Perturbation Shift Percentage">
+                {[5.0, 10.0, 15.0, 20.0, 25.0].map((pct) => (
+                  <button
+                    key={pct}
+                    type="button"
+                    className={`seg-btn ${shiftPct === pct ? 'active' : ''}`}
+                    onClick={() => setShiftPct(pct)}
+                    disabled={reassessing}
+                  >
+                    ±{pct}%
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={handleReassess}
+                disabled={reassessing}
+              >
+                {reassessing ? (
+                  <span className="btn-loading-content">
+                    <span className="btn-spinner" aria-hidden="true"></span>
+                    <span>Reassessing...</span>
+                  </span>
+                ) : (
+                  <span>Re-evaluate Robustness</span>
+                )}
+              </button>
+            </div>
+          </div>
+          {reassessError && (
+            <div className="review-message message-error" style={{ marginTop: '0.75rem' }}>
+              <span className="msg-icon" aria-hidden="true">⚠️</span>
+              <span>{reassessError}</span>
+            </div>
+          )}
+          {reassessResult && (
+            <div className="review-message message-success" style={{ marginTop: '0.75rem' }}>
+              <span className="msg-icon" aria-hidden="true">✓</span>
+              <span>
+                Robustness re-assessed at ±{shiftPct}% perturbation: status is <strong>{reassessResult.robustness?.status}</strong>.
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Robustness Status Hero Card */}
+      <div className={`card robustness-hero-status-card status-border-${status.toLowerCase()}`}>
+        <div className="status-hero-main">
+          <span className="cap-label">Deterministic Robustness Check</span>
+          <div className={`status-hero-label text-${status.toLowerCase()}`}>
+            {statusLabel}
+          </div>
+          <p className="status-hero-explanation">{robustness.explanation}</p>
+          {baseline?.result_summary?.lead_margin_percent !== undefined && (
+            <div className="status-hero-metric-note">
+              Baseline Lead Margin: <strong>{baseline.result_summary.lead_margin_percent}%</strong> · Required Stability Threshold: <strong>5.0%</strong>
+            </div>
+          )}
+        </div>
+
+        {/* Baseline vs Scenario Comparison Box */}
+        <div className="status-comparison-box">
+          <div className="comparison-box-item">
+            <span className="cap-label">
+              <span className="badge badge-platform" style={{ fontSize: '0.65rem', marginRight: '4px' }}>OBSERVED</span>
+              Baseline
+            </span>
+            <strong>{topCandidate} #1</strong>
+          </div>
+          <span className="comparison-arrow" aria-hidden="true">→</span>
+          <div className={`comparison-box-item ${status === 'SENSITIVE' ? 'item-sensitive' : ''}`}>
+            <span className="cap-label">
+              <span className="badge badge-platform" style={{ fontSize: '0.65rem', marginRight: '4px' }}>SIMULATED</span>
+              {alternates.length > 0 ? `${alternates.length} alternate scenario(s)` : 'Scenarios'}
+            </span>
+            <strong className={status === 'SENSITIVE' ? 'text-warn' : 'text-ok'}>
+              {status === 'STABLE' ? `${topCandidate} #1` : (status === 'SENSITIVE' ? 'Candidate Shift' : 'Unchecked')}
+            </strong>
           </div>
         </div>
       </div>
 
-      {/* Dynamic Output Container */}
-      <div id="out">
-        {/* Status Hero Card */}
-        <div className="card status" style={{ '--c': activeCfg.c }}>
-          <div>
-            <span className="cap">Robustness check</span>
-            <div className="st">{activeCfg.l}</div>
-            <p>{activeCfg.p}</p>
-            {LEAD_MARGIN_LINE[selectedStatus] && (
-              <div className="lm">{LEAD_MARGIN_LINE[selectedStatus]}</div>
-            )}
-          </div>
-
-          <div className="cmp">
-            {selectedStatus === 'STABLE' && (
-              <>
-                <div className="box">
-                  <span className="cap">Baseline</span>
-                  <b>North #1</b>
-                </div>
-                <span className="ar">→</span>
-                <div className="box">
-                  <span className="cap">All 3 scenarios</span>
-                  <b>North #1</b>
-                </div>
-              </>
-            )}
-
-            {selectedStatus === 'SENSITIVE' && (
-              <>
-                <div className="box">
-                  <span className="cap">Baseline</span>
-                  <b>North #1</b>
-                </div>
-                <span className="ar">→</span>
-                <div className="box" style={{ borderColor: '#6E5526' }}>
-                  <span className="cap">Growth ×3</span>
-                  <b style={{ color: 'var(--warn)' }}>East #1</b>
-                </div>
-              </>
-            )}
-
-            {selectedStatus === 'INSUFFICIENT_EVIDENCE' && (
-              <>
-                <div className="box">
-                  <span className="cap">Baseline</span>
-                  <b>North #1</b>
-                </div>
-                <span className="ar">→</span>
-                <div className="box">
-                  <span className="cap">Scenario</span>
-                  <b style={{ color: 'var(--mu)' }}>Not tested</b>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* Section Header */}
-        <div className="sec">
-          <span className="cap">
-            {activeCfg.sc.length > 0
-              ? `${activeCfg.sc.length} alternate scenario${activeCfg.sc.length > 1 ? 's' : ''}`
-              : 'Scenarios'}
-          </span>
-          <span className="badge b-mu">Baseline: Revenue 0.50 · Margin 0.30 · Growth 0.20</span>
-        </div>
-
-        {/* Alternate Scenarios or Empty Box */}
-        {selectedStatus === 'INSUFFICIENT_EVIDENCE' ? (
-          <div className="card scn">
-            <div className="empty">
-              No alternate scenario could be evaluated. Only one quarter of growth data is available, so a growth-weighted scenario would not be reliable.
-            </div>
-          </div>
-        ) : (
-          activeCfg.sc.map((key) => renderScenarioCard(key))
-        )}
-
-        {/* Outliers Section (only in STABLE and SENSITIVE) */}
-        {selectedStatus !== 'INSUFFICIENT_EVIDENCE' && (
-          <>
-            <div className="sec">
-              <span className="cap">Outliers</span>
-            </div>
-            <div className="grid2">
-              <div className="card pad">
-                <span className="cap">Outlier sensitivity</span>
-                <h3>Largest single order removed</h3>
-                <p>
-                  Excluding North's largest order (−$0.31M, 6.4% of its revenue) leaves North first. Its lead over East narrows from 0.16 to 0.10.
-                </p>
-                <div className="kv">
-                  <span>Result</span>
-                  <span>North #1 · unchanged</span>
-                </div>
-              </div>
-
-              <div className="card pad">
-                <span className="cap">Metric changes</span>
-                <h3>North revenue $4.82M → $4.51M</h3>
-                <p>East, South and West are unaffected by this exclusion.</p>
-                <div className="kv">
-                  <span>Margin</span>
-                  <span>31.4% → 31.6%</span>
-                  <span>Score</span>
-                  <span>0.90 → 0.90</span>
-                </div>
-              </div>
-            </div>
-          </>
-        )}
-
-        {/* "What this means" Callout Box */}
-        <div className="next" style={{ '--c': activeCfg.c }}>
-          <span className="cap">What this means</span>
-          <div style={{ marginTop: '4px' }}>{activeCfg.next}</div>
-        </div>
+      {/* Human Review & Approval Integration */}
+      <div className="decision-approval-container">
+        <HumanReviewPanel
+          key={invId || 'inv_active'}
+          investigationId={invId || 'inv_active'}
+          investigationStatus={
+            activeData?.status || (status === 'SENSITIVE' ? 'REQUIRES_REVIEW' : 'COMPLETED')
+          }
+          latestReview={activeData?.latest_review || null}
+          reviewCount={activeData?.review_count || 0}
+          useMock={useMock}
+          currentUser={currentUser}
+          ownerId={activeData?.owner_id || activeData?.metadata?.owner_id || 'usr_analyst_01'}
+        />
       </div>
 
-      {/* Footnote */}
-      <p className="note">Sample data shown for illustration. The state switch above is a design preview control, not a product feature.</p>
+      {/* Scenario Section Title */}
+      <div className="section-title-row" style={{ marginTop: '1.5rem', marginBottom: '0.75rem' }}>
+        <span className="cap-label">
+          {alternates.length ? `${alternates.length} Alternate Scenario${alternates.length > 1 ? 's' : ''} Evaluated` : 'Scenarios'}
+        </span>
+        <span className={`status-badge ${statusBadgeClass}`}>{statusLabel}</span>
+      </div>
+
+      {/* Scenario Chart */}
+      <div style={{ marginBottom: '1.5rem' }}>
+        <RobustnessScenarioChart
+          baselineScenario={baseline}
+          alternateScenarios={alternates}
+          robustnessStatus={status}
+        />
+      </div>
+
+      {/* Scenario Detail Cards */}
+      <div className="scenarios-cards-stack">
+        {alternates.map((alt, idx) => {
+          const isChanged = alt.is_recommendation_changed;
+          const altBadgeClass = isChanged ? 'b-warn' : 'b-ok';
+          const altOutcomeText = isChanged
+            ? `${alt.result_summary?.second_candidate || 'Alternative'} becomes #1`
+            : `${topCandidate} remains #1`;
+
+          return (
+            <div key={idx} className="card scenario-detail-card">
+              <div className="scenario-detail-header">
+                <div>
+                  <span className="cap-label">
+                    <span className="badge badge-platform" style={{ fontSize: '0.65rem', marginRight: '6px' }}>SIMULATED</span>
+                    Scenario #{idx + 1}
+                  </span>
+                  <h3 className="scenario-detail-title">
+                    {alt.scenario_name ? alt.scenario_name.replace(/_/g, ' ') : `Alternate Scenario #${idx + 1}`}
+                  </h3>
+                  <div className="scenario-assumptions-list">
+                    {Object.entries(alt.assumptions || {}).map(([k, v]) => (
+                      <span key={k} className="assumption-pill">
+                        {k}: <strong>{String(v)}</strong>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <span className={`status-badge ${altBadgeClass}`}>
+                  {altOutcomeText}
+                </span>
+              </div>
+
+              {/* Scenario Results Table */}
+              <div className="table-responsive-wrapper">
+                <table className="data-table scenario-table">
+                  <thead>
+                    <tr>
+                      <th>Rank</th>
+                      <th>Candidate</th>
+                      <th style={{ textAlign: 'right' }}>Baseline Rank</th>
+                      <th style={{ textAlign: 'right' }}>Scenario Outcome</th>
+                      <th style={{ textAlign: 'right' }}>Status Shift</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rankings.map((c, rIdx) => {
+                      const candName = c.region || c.candidate || `Candidate #${rIdx + 1}`;
+                      const isTopCand = rIdx === 0;
+                      const shift = isChanged && isTopCand ? '▼ -1' : (isChanged && rIdx === 1 ? '▲ +1' : '—');
+                      const shiftClass = isChanged && isTopCand ? 'text-warn' : (isChanged && rIdx === 1 ? 'text-ok' : 'text-mu');
+
+                      return (
+                        <tr key={candName} className={isChanged && isTopCand ? 'row-changed' : ''}>
+                          <td style={{ fontFamily: 'var(--font-mono)' }}>{rIdx + 1}</td>
+                          <td><strong>{candName}</strong></td>
+                          <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)' }}>
+                            #{rIdx + 1}
+                          </td>
+                          <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)' }}>
+                            {isTopCand ? (isChanged ? 'Rank Shifted' : 'Maintains Rank') : 'Consistent'}
+                          </td>
+                          <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 600 }} className={shiftClass}>
+                            {shift}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* "What this means" Action Callout Box */}
+      <div className={`callout-card callout-border-${status.toLowerCase()}`}>
+        <span className="cap-label">What this means</span>
+        <div className="callout-content-text">
+          {interpretationText}
+        </div>
+      </div>
     </div>
   );
 }
+
+export default RobustnessView;

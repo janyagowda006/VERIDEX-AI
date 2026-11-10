@@ -1,66 +1,38 @@
-import React, { useState, useEffect } from 'react';
-import { askQuestion, getInvestigationDetail, getMe } from './api/client.js';
+import React, { useState, useEffect, useCallback } from 'react';
+import { askQuestion, getInvestigationDetail } from './api/client.js';
+import { AuthProvider } from './context/AuthContext.jsx';
+import { useAuth } from './context/useAuth.js';
+import { LoginModal } from './components/LoginModal.jsx';
+import { Sidebar } from './components/Sidebar.jsx';
 import { ThemeToggle } from './components/ThemeToggle.jsx';
-import { QuestionInput } from './components/QuestionInput.jsx';
-import { ConversationThread } from './components/ConversationThread.jsx';
-import { ExecutiveSummary } from './components/ExecutiveSummary.jsx';
-import { AnswerCard } from './components/AnswerCard.jsx';
-import { EvidencePanel } from './components/EvidencePanel.jsx';
-import { DecisionCard } from './components/DecisionCard.jsx';
-import { RobustnessCard } from './components/RobustnessCard.jsx';
-import { HumanReviewPanel } from './components/HumanReviewPanel.jsx';
 import { InvestigationHistoryDrawer } from './components/InvestigationHistoryDrawer.jsx';
 import { GlobalAnalyticsPanel } from './components/GlobalAnalyticsPanel.jsx';
-import { Sidebar } from './components/Sidebar.jsx';
 import { OverviewView } from './components/views/OverviewView.jsx';
-import { DataSourcesView } from './components/views/DataSourcesView.jsx';
-import { SettingsView } from './components/views/SettingsView.jsx';
-import { HistoryView } from './components/views/HistoryView.jsx';
-import { AuditTrailView } from './components/views/AuditTrailView.jsx';
-import { EvidenceExplorerView } from './components/views/EvidenceExplorerView.jsx';
-import { DecisionsView } from './components/views/DecisionsView.jsx';
-import { LandingPage } from './components/views/LandingPage.jsx';
-import { WorkspaceView } from './components/views/WorkspaceView.jsx';
-import { InvestigationDetailView } from './components/views/InvestigationDetailView.jsx';
+import { InvestigationWorkspaceView } from './components/views/InvestigationWorkspaceView.jsx';
+import { DecisionView } from './components/views/DecisionView.jsx';
 import { RobustnessView } from './components/views/RobustnessView.jsx';
-import { EvidenceModelView } from './components/views/EvidenceModelView.jsx';
+import { EvidenceExplorerView } from './components/views/EvidenceExplorerView.jsx';
+import { InvestigationDetailView } from './components/views/InvestigationDetailView.jsx';
+import { HistoryView } from './components/views/HistoryView.jsx';
+import { SourcesView } from './components/views/SourcesView.jsx';
 import './App.css';
 
-function App() {
+function AppWorkspace() {
+  const { currentUser, isAuthenticated, isLoading: authLoading, login, logout, authError } = useAuth();
+
+  const [activeView, setActiveView] = useState('overview');
   const [data, setData] = useState(null);
   const [activeInvestigationId, setActiveInvestigationId] = useState(null);
   const [turns, setTurns] = useState([]);
   const [activeTurnNumber, setActiveTurnNumber] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+
+  // Live vs Mock mode: Live by default!
   const [useMock, setUseMock] = useState(false);
   const [selectedEvidenceId, setSelectedEvidenceId] = useState(null);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isAnalyticsOpen, setIsAnalyticsOpen] = useState(false);
-
-  // Prototype Multi-View & Sidebar Navigation State
-  const [activeView, setActiveView] = useState('landing');
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-
-  // Enterprise Auth & RBAC State
-  const [userRole, setUserRole] = useState('ANALYST');
-  const [currentUser, setCurrentUser] = useState({
-    user_id: "usr_analyst_01",
-    email: "analyst@veridex.internal",
-    full_name: "Lead Analyst",
-    role: "ANALYST",
-    is_active: true
-  });
-
-  const handleSwitchRole = async (newRole) => {
-    setUserRole(newRole);
-    try {
-      const u = await getMe(useMock, newRole);
-      if (u) setCurrentUser(u);
-    } catch {
-      // fallback
-    }
-  };
 
   // Theme state: respects localStorage preference, fallback to system preference
   const [theme, setTheme] = useState(() => {
@@ -71,9 +43,9 @@ function App() {
         return 'dark';
       }
     } catch {
-      // safe fallback for restricted sandbox environments
+      // safe fallback
     }
-    return 'light';
+    return 'dark';
   });
 
   useEffect(() => {
@@ -96,10 +68,10 @@ function App() {
     setData(null);
     setError(null);
     setSelectedEvidenceId(null);
-    setActiveView('workspace');
+    setActiveView('investigations');
   };
 
-  const handleRunInvestigation = async (question, forceMock = useMock, isNewInvestigation = false) => {
+  const handleRunInvestigation = useCallback(async (question, forceMock = useMock, isNewInvestigation = false) => {
     setSelectedEvidenceId(null);
     setLoading(true);
     setError(null);
@@ -112,7 +84,7 @@ function App() {
         setError(res.error);
       }
 
-      const targetInvId = res.investigation_id || res.metadata?.investigation_id || invIdToSend || "inv_mock_123456";
+      const targetInvId = res.investigation_id || res.metadata?.investigation_id || invIdToSend || "inv_active";
       const isContinuation = Boolean(!isNewInvestigation && invIdToSend && targetInvId === invIdToSend);
       const nextTurnNum = isContinuation ? turns.length + 1 : 1;
 
@@ -138,18 +110,13 @@ function App() {
       setActiveInvestigationId(targetInvId);
       setActiveTurnNumber(nextTurnNum);
       setData(res);
+      setActiveView('investigations');
     } catch (err) {
-      setError(err.message || "Failed to execute investigation request.");
+      setError(err.detail || err.message || "Failed to execute investigation request.");
     } finally {
       setLoading(false);
     }
-  };
-
-  // Load initial mock investigation on mount
-  useEffect(() => {
-    handleRunInvestigation("What is our gross revenue by region?", true, true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [activeInvestigationId, turns, useMock]);
 
   const handleSelectHistoricalInvestigation = async (invId) => {
     setSelectedEvidenceId(null);
@@ -223,9 +190,9 @@ function App() {
       setActiveInvestigationId(detail.investigation_id);
       setActiveTurnNumber(turnItems[turnItems.length - 1].turn_number);
       setData(combinedData);
-      setActiveView('workspace');
+      setActiveView('detail');
     } catch (err) {
-      setError(err.message || "Failed to load historical investigation details.");
+      setError(err.detail || err.message || "Failed to load historical investigation details.");
     } finally {
       setLoading(false);
     }
@@ -241,35 +208,68 @@ function App() {
     }
   };
 
-  if (activeView === 'landing') {
-    return <LandingPage onNavigate={(view) => setActiveView(view)} />;
+  // View titles for header breadcrumbs
+  const VIEW_TITLES = {
+    overview: 'Overview',
+    investigations: 'Investigations Workspace',
+    sources: 'Data Sources & Schema',
+    evidence: 'Evidence Explorer',
+    decisions: 'Decision Intelligence',
+    robustness: 'Robustness Analysis',
+    detail: 'Investigation Audit Detail',
+    history: 'Investigation History',
+    settings: 'Security & Settings'
+  };
+
+  // If auth is loading on initial startup
+  if (authLoading) {
+    return (
+      <div className="history-state-container" style={{ minHeight: '100vh' }}>
+        <span className="btn-spinner" aria-hidden="true"></span>
+        <span>Initializing VERIDEX Decision Intelligence Platform...</span>
+      </div>
+    );
   }
 
-  if (activeView === 'model') {
-    return <EvidenceModelView onNavigate={(view) => setActiveView(view)} />;
+  // If user is not authenticated, show real Login Screen
+  if (!isAuthenticated) {
+    return (
+      <LoginModal
+        isOpen={true}
+        onLogin={login}
+        initialError={authError}
+      />
+    );
   }
 
   return (
-    <div className="container app-shell">
-      <header className="header" role="banner">
-        <div className="header-top">
-          <div
-            className="brand-group"
-            onClick={() => setActiveView('landing')}
-            style={{ cursor: 'pointer' }}
-            title="Return to Landing Page"
-            role="button"
-            tabIndex={0}
-            onKeyDown={(e) => e.key === 'Enter' && setActiveView('landing')}
-          >
-            <div className="brand-logo" aria-hidden="true">
-              <span className="logo-symbol">V</span>
-            </div>
-            <div>
-              <h1 className="title">VERIDEX</h1>
-              <p className="subtitle">Evidence-First AI Decision Intelligence Engine</p>
-            </div>
+    <div className="app-shell">
+      {/* Persistent Left Sidebar Navigation */}
+      <Sidebar
+        activeView={activeView}
+        onSelectView={setActiveView}
+        currentUser={currentUser}
+        workspaceName="Acme Retail"
+        onLogout={logout}
+      />
+
+      {/* Main Viewport Container */}
+      <div className="main-viewport">
+        {/* Top Header Application Bar */}
+        <header className="app-header" role="banner">
+          <div className="header-left">
+            <span className="header-breadcrumb">
+              <span className="crumb-root">VERIDEX</span>
+              <span className="crumb-sep">/</span>
+              <span className="crumb-current">{VIEW_TITLES[activeView] || 'Workspace'}</span>
+            </span>
+            {activeInvestigationId && activeView === 'investigations' && (
+              <span className="active-inv-tag" title="Active investigation identifier">
+                {activeInvestigationId}
+              </span>
+            )}
           </div>
+
           <div className="header-controls">
             {activeInvestigationId && (
               <button
@@ -282,6 +282,7 @@ function App() {
                 New Thread
               </button>
             )}
+
             <button
               type="button"
               className="btn-analytics-toggle"
@@ -291,6 +292,7 @@ function App() {
               <span className="btn-icon" aria-hidden="true">📊</span>
               Analytics
             </button>
+
             <button
               type="button"
               className="btn-history-toggle"
@@ -298,174 +300,249 @@ function App() {
               aria-label="Open investigation history drawer"
             >
               <span className="btn-icon" aria-hidden="true">📜</span>
-              History Drawer
+              History
             </button>
+
             <div className="header-badges">
               <span className="badge badge-platform">AI Build Challenge 2026</span>
-              <span className={`mode-badge ${useMock ? 'mock' : 'live'}`}>
-                <span className="mode-dot" aria-hidden="true">●</span>
-                {useMock ? 'Mock API Mode' : 'Live API Mode'}
-              </span>
-            </div>
-            {/* Dev Role Switcher */}
-            <div className="role-switcher-group" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <select
-                className="role-switcher-select"
-                value={userRole}
-                onChange={(e) => handleSwitchRole(e.target.value)}
-                style={{
-                  padding: '0.25rem 0.5rem',
-                  fontSize: '0.8125rem',
-                  borderRadius: '0.375rem',
-                  border: '1px solid var(--border-medium)',
-                  backgroundColor: 'var(--bg-card)',
-                  color: 'var(--text-primary)',
-                  fontWeight: '500'
-                }}
-                aria-label="Switch User Role for Dev Testing"
+              <button
+                type="button"
+                className={`mode-badge ${useMock ? 'mock' : 'live'}`}
+                onClick={() => setUseMock(!useMock)}
+                title="Toggle between Live Backend Mode and Offline Mock Mode"
               >
-                <option value="ANALYST">Role: ANALYST (Lead Analyst)</option>
-                <option value="REVIEWER">Role: REVIEWER (Senior Reviewer)</option>
-                <option value="AUDITOR">Role: AUDITOR (Compliance Auditor)</option>
-                <option value="ADMIN">Role: ADMIN (System Admin)</option>
-              </select>
-              <span className="user-role-badge" style={{ fontSize: '0.75rem', fontWeight: '600', padding: '0.2rem 0.4rem', borderRadius: '0.25rem', backgroundColor: 'var(--bg-card-subtle)', color: 'var(--text-secondary)', border: '1px solid var(--border-light)' }}>
-                👤 {currentUser?.full_name || userRole}
-              </span>
+                <span className="mode-dot" aria-hidden="true">●</span>
+                {useMock ? 'Mock Mode' : 'Live API Mode'}
+              </button>
             </div>
+
+            {/* Authenticated User & Role Profile */}
+            <div className="role-switcher-group" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <span className="user-role-badge">
+                👤 {currentUser?.full_name || currentUser?.email} (<strong>{currentUser?.role || 'ANALYST'}</strong>)
+              </span>
+              <button
+                type="button"
+                className="btn btn-outline btn-xs"
+                onClick={logout}
+                title="Sign out of active session"
+              >
+                Sign Out
+              </button>
+            </div>
+
             <ThemeToggle theme={theme} onToggle={handleToggleTheme} />
           </div>
-        </div>
-      </header>
+        </header>
 
-      {/* Main Layout Grid with Sidebar Navigation */}
-      <div className="app-body-layout" style={{ display: 'flex', gap: '1.25rem', width: '100%', alignItems: 'flex-start' }}>
-        <Sidebar
-          activeView={activeView}
-          setActiveView={setActiveView}
-          collapsed={sidebarCollapsed}
-          setCollapsed={setSidebarCollapsed}
-          userRole={userRole}
-        />
-
-        <main className="content main-view-content" role="main" style={{ flex: 1, minWidth: 0 }}>
-          {/* Active View Renderer */}
+        {/* Dynamic Main Content View */}
+        <main className="content" role="main">
+          {/* VIEW: OVERVIEW */}
           {activeView === 'overview' && (
             <OverviewView
-              useMock={useMock}
               currentUser={currentUser}
-              onNavigate={setActiveView}
+              activeData={data}
+              onRunInvestigation={(q) => handleRunInvestigation(q, useMock, true)}
               onSelectInvestigation={handleSelectHistoricalInvestigation}
-            />
-          )}
-
-          {(activeView === 'datasources' || activeView === 'sources') && (
-            <DataSourcesView useMock={useMock} currentUser={currentUser} onNavigate={setActiveView} />
-          )}
-
-          {activeView === 'settings' && (
-            <SettingsView
-              theme={theme}
-              onToggleTheme={handleToggleTheme}
-              useMock={useMock}
-              onToggleMock={setUseMock}
-              userRole={userRole}
-              onSwitchRole={handleSwitchRole}
-              currentUser={currentUser}
-              onNavigate={setActiveView}
-            />
-          )}
-
-          {activeView === 'history' && (
-            <HistoryView
-              onSelectInvestigation={(invId) => {
-                handleSelectHistoricalInvestigation(invId);
-              }}
               onNavigate={setActiveView}
               useMock={useMock}
-              currentUser={currentUser}
             />
           )}
 
-          {activeView === 'audit' && (
-            <AuditTrailView useMock={useMock} currentUser={currentUser} />
-          )}
-
-          {(activeView === 'evidence' || activeView === 'model') && (
-            <EvidenceExplorerView
+          {/* VIEW: INVESTIGATIONS (Active Investigation Workspace) */}
+          {activeView === 'investigations' && (
+            <InvestigationWorkspaceView
               data={data}
-              useMock={useMock}
-              currentUser={currentUser}
-              onNavigate={setActiveView}
-              onSelectInvestigation={handleSelectHistoricalInvestigation}
-            />
-          )}
-
-          {(activeView === 'decisions' || activeView === 'decision') && (
-            <DecisionsView
-              data={data}
-              useMock={useMock}
-              currentUser={currentUser}
-              onNavigate={setActiveView}
-              onSelectInvestigation={handleSelectHistoricalInvestigation}
-            />
-          )}
-
-          {activeView === 'detail' && (
-            <InvestigationDetailView
-              data={data}
-              useMock={useMock}
-              currentUser={currentUser}
-              onNavigate={setActiveView}
-            />
-          )}
-
-          {activeView === 'robustness' && (
-            <RobustnessView
-              data={data}
-              useMock={useMock}
-              currentUser={currentUser}
-              onNavigate={setActiveView}
-              onSelectInvestigation={handleSelectHistoricalInvestigation}
-            />
-          )}
-
-          {(activeView === 'workspace' || activeView === 'ask') && (
-            <WorkspaceView
-              data={data}
-              loading={loading}
-              error={error}
-              onRunInvestigation={handleRunInvestigation}
-              activeInvestigationId={activeInvestigationId}
-              currentUser={currentUser}
-              useMock={useMock}
               turns={turns}
               activeTurnNumber={activeTurnNumber}
               onSelectTurn={handleSelectTurn}
+              activeInvestigationId={activeInvestigationId}
+              onNewInvestigation={handleStartNewInvestigation}
+              onRunInvestigation={handleRunInvestigation}
+              loading={loading}
+              error={error}
+              useMock={useMock}
+              onToggleMock={(val) => {
+                setUseMock(val);
+                if (data?.question) {
+                  handleRunInvestigation(data.question, val, true);
+                }
+              }}
+              selectedEvidenceId={selectedEvidenceId}
+              onSelectEvidence={setSelectedEvidenceId}
+              currentUser={currentUser}
               onNavigate={setActiveView}
             />
           )}
+
+          {/* VIEW: DATA SOURCES & SCHEMA */}
+          {activeView === 'sources' && (
+            <SourcesView
+              currentUser={currentUser}
+              onNavigate={setActiveView}
+            />
+          )}
+
+          {/* VIEW: EVIDENCE (Dedicated Evidence Explorer) */}
+          {activeView === 'evidence' && (
+            <EvidenceExplorerView
+              evidence={data?.evidence || []}
+              toolCalls={data?.tool_calls || []}
+              claims={data?.claims || []}
+              criteria={data?.analysis?.criteria_evaluated || []}
+              recommendation={data?.analysis?.recommendation || null}
+              selectedEvidenceId={selectedEvidenceId}
+              onSelectEvidence={setSelectedEvidenceId}
+              investigationId={activeInvestigationId || data?.metadata?.investigation_id || 'inv_active'}
+              onNavigate={setActiveView}
+            />
+          )}
+
+          {/* VIEW: DECISIONS (Dedicated Decision Intelligence) */}
+          {activeView === 'decisions' && (
+            <DecisionView
+              data={data}
+              selectedEvidenceId={selectedEvidenceId}
+              onSelectEvidence={setSelectedEvidenceId}
+              onNavigate={setActiveView}
+              currentUser={currentUser}
+              useMock={useMock}
+            />
+          )}
+
+          {/* VIEW: ROBUSTNESS (Dedicated Robustness Analysis) */}
+          {activeView === 'robustness' && (
+            <RobustnessView
+              data={data}
+              onNavigate={setActiveView}
+              currentUser={currentUser}
+              useMock={useMock}
+              onRobustnessUpdated={(reassessed) => {
+                if (data) {
+                  setData((prev) => ({
+                    ...prev,
+                    analysis: {
+                      ...(prev?.analysis || {}),
+                      robustness: reassessed.robustness
+                    }
+                  }));
+                }
+              }}
+            />
+          )}
+
+          {/* VIEW: DETAIL (Dedicated Investigation Audit Detail) */}
+          {activeView === 'detail' && (
+            <InvestigationDetailView
+              data={data}
+              onNavigate={setActiveView}
+              onSelectEvidence={setSelectedEvidenceId}
+              currentUser={currentUser}
+              useMock={useMock}
+            />
+          )}
+
+          {/* VIEW: HISTORY (Real Investigation Audit History) */}
+          {activeView === 'history' && (
+            <HistoryView
+              onSelectInvestigation={handleSelectHistoricalInvestigation}
+              onNavigate={setActiveView}
+              currentUser={currentUser}
+              useMock={useMock}
+            />
+          )}
+
+          {/* VIEW: SETTINGS */}
+          {activeView === 'settings' && (
+            <div className="view-shell settings-view-shell">
+              <div className="card settings-card">
+                <h2 className="section-heading">System & Security Settings</h2>
+                <div className="settings-section">
+                  <h3>Active User & Security Context</h3>
+                  <div className="setting-row">
+                    <span>Authenticated User:</span>
+                    <strong>{currentUser?.full_name} ({currentUser?.email})</strong>
+                  </div>
+                  <div className="setting-row">
+                    <span>Enterprise Role:</span>
+                    <span className="badge badge-platform">{currentUser?.role}</span>
+                  </div>
+                  <div className="setting-row">
+                    <span>User Identifier:</span>
+                    <code>{currentUser?.user_id}</code>
+                  </div>
+                  <div className="setting-row" style={{ marginTop: '0.5rem' }}>
+                    <button type="button" className="btn btn-outline btn-sm" onClick={logout}>
+                      Sign Out of VERIDEX
+                    </button>
+                  </div>
+                </div>
+
+                <div className="settings-section" style={{ marginTop: '1.5rem' }}>
+                  <h3>Security & Enforcement Guarantees</h3>
+                  <div className="setting-row">
+                    <span>Read-Only SQL Execution:</span>
+                    <span className="status-badge status-badge-ok">✓ Enforced (SQLGlot AST validation)</span>
+                  </div>
+                  <div className="setting-row">
+                    <span>Deterministic Calculations:</span>
+                    <span className="status-badge status-badge-ok">✓ Enforced (Python numeric engine)</span>
+                  </div>
+                  <div className="setting-row">
+                    <span>Evidence Lineage & Provenance:</span>
+                    <span className="status-badge status-badge-ok">✓ Enforced (SHA-256 query hashing)</span>
+                  </div>
+                  <div className="setting-row">
+                    <span>Self-Review Separation of Duties:</span>
+                    <span className="status-badge status-badge-ok">✓ Enforced (Investigator cannot review own thread)</span>
+                  </div>
+                  <div className="setting-row">
+                    <span>Multi-turn IDOR Guard:</span>
+                    <span className="status-badge status-badge-ok">✓ Enforced (Thread ownership validation)</span>
+                  </div>
+                </div>
+
+                <div className="settings-section" style={{ marginTop: '1.5rem' }}>
+                  <h3>Appearance & Preferences</h3>
+                  <div className="setting-row">
+                    <span>Color Theme:</span>
+                    <ThemeToggle theme={theme} onToggle={handleToggleTheme} />
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </main>
+
+        {/* Footer */}
+        <footer className="footer" role="contentinfo">
+          <p>VERIDEX — Traceable Evidence • Deterministic Calculations • Human Decisions</p>
+        </footer>
+
+        {/* Slide-over Drawers */}
+        <InvestigationHistoryDrawer
+          isOpen={isHistoryOpen}
+          onClose={() => setIsHistoryOpen(false)}
+          onSelectInvestigation={handleSelectHistoricalInvestigation}
+          useMock={useMock}
+          currentUser={currentUser}
+        />
+
+        <GlobalAnalyticsPanel
+          isOpen={isAnalyticsOpen}
+          onClose={() => setIsAnalyticsOpen(false)}
+          useMock={useMock}
+        />
       </div>
-
-      <footer className="footer" role="contentinfo">
-        <p>VERIDEX — Traceable Evidence • Deterministic Calculations • Human Decisions</p>
-      </footer>
-
-      <InvestigationHistoryDrawer
-        isOpen={isHistoryOpen}
-        onClose={() => setIsHistoryOpen(false)}
-        onSelectInvestigation={handleSelectHistoricalInvestigation}
-        useMock={useMock}
-        currentUser={currentUser}
-      />
-
-      <GlobalAnalyticsPanel
-        isOpen={isAnalyticsOpen}
-        onClose={() => setIsAnalyticsOpen(false)}
-        useMock={useMock}
-      />
     </div>
+  );
+}
+
+export function App() {
+  return (
+    <AuthProvider>
+      <AppWorkspace />
+    </AuthProvider>
   );
 }
 

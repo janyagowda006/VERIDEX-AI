@@ -1,5 +1,11 @@
-# VERIDEX Backend Container Configuration
-FROM python:3.14-slim as base
+# VERIDEX AI Backend Container Configuration
+# Optimized for Python 3.12 and Render.com deployment
+FROM python:3.12-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PORT=8000 \
+    PYTHONPATH=/app
 
 WORKDIR /app
 
@@ -10,19 +16,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements and install Python packages
-COPY requirements.txt .
+# Install Python requirements
+COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy backend application source code
-COPY . .
+# Copy backend source code and scripts
+COPY . /app
 
-# Expose FastAPI default port
+# Expose service port
 EXPOSE 8000
 
-# Set environment variables
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONPATH=/app
+# Deep container readiness check
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:${PORT:-8000}/ready || exit 1
 
-# Start FastAPI server via Uvicorn
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Execute Uvicorn with dynamic $PORT expansion for Render compatibility
+CMD sh -c "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"
